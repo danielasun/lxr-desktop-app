@@ -17,6 +17,7 @@
 #include <string.h>
 #include "Soundengine/USB/usb_manager.h"
 #include "Soundengine/MIDI/Uart.h"
+#include "Soundengine/PunchFx.h"
 
 uint8_t soundengine_calcNextSampleBlock()
 {
@@ -24,6 +25,8 @@ uint8_t soundengine_calcNextSampleBlock()
 	{
 	#if USE_DAC2
 		mixer_calcNextSampleBlock((int16_t*)&dma_buffer[bCurrentSampleValid*(OUTPUT_DMA_SIZE*2)],(int16_t*)&dma_buffer2[bCurrentSampleValid*(OUTPUT_DMA_SIZE*2)]);
+		//punch-in fx on the final mix of both DACs. kept outside of the mixer so it doesn't need ITCM space
+		PunchFx_process((int16_t*)&dma_buffer[bCurrentSampleValid*(OUTPUT_DMA_SIZE*2)],(int16_t*)&dma_buffer2[bCurrentSampleValid*(OUTPUT_DMA_SIZE*2)], OUTPUT_DMA_SIZE);
 	#else
 		mixer_calcNextSampleBlock(&dma_buffer[bCurrentSampleValid*(OUTPUT_DMA_SIZE*2)],&dma_buffer2[(1-bCurrentSampleValid)*(OUTPUT_DMA_SIZE*2)]);
 	#endif
@@ -38,6 +41,7 @@ uint8_t soundengine_calcNextSampleBlock()
 void soundengine_init()
 {
 	mixer_init();
+	PunchFx_init();
 
 
 

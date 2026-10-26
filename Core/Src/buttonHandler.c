@@ -54,6 +54,8 @@ volatile struct {
 } buttonHandler_stateMemory;
 
 static uint8_t buttonHandler_mutedVoices = 0;
+static uint8_t buttonHandler_punchHeld = 0;		//bit per held punch button (seq buttons 9-16)
+static uint8_t buttonHandler_punchLast = 0;		//last pressed punch button
 volatile static int8_t buttonHandler_armedAutomationStep = NO_STEP_SELECTED;
 
 #define ARM_AUTOMATION		0x40
@@ -821,6 +823,44 @@ static void buttonHandler_setTrackRotation(uint8_t seqButtonPressed)
 }
 */
 //--------------------------------------------------------
+// perf mode: seq buttons 9-16 play the punch-in fx while held
+static void buttonHandler_punchPressed(uint8_t seqButtonPressed)
+{
+	const uint8_t idx = seqButtonPressed - 8;
+	buttonHandler_punchHeld |= (uint8_t)(1<<idx);
+	buttonHandler_punchLast = idx;
+	frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, idx + 1);
+	led_setValue(1, led_idx2StepLed(seqButtonPressed));
+}
+//--------------------------------------------------------
+// handled independent of the mode and shift, so a held fx is always released
+// returns 1 if the button was a held punch button
+static uint8_t buttonHandler_punchReleased(uint8_t seqButtonPressed)
+{
+	if(seqButtonPressed < 8) return 0;
+	const uint8_t idx = seqButtonPressed - 8;
+	if(!(buttonHandler_punchHeld & (1<<idx))) return 0;
+
+	buttonHandler_punchHeld &= (uint8_t)~(1<<idx);
+	led_setValue(0, led_idx2StepLed(seqButtonPressed));
+
+	if(idx == buttonHandler_punchLast)
+	{
+		//fall back to another button that is still held
+		uint8_t next = PUNCH_OFF;
+		for(uint8_t i=0;i<8;i++)
+		{
+			if(buttonHandler_punchHeld & (1<<i))
+			{
+				next = i + 1;
+				buttonHandler_punchLast = i;
+			}
+		}
+		frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, next);
+	}
+	return 1;
+}
+//--------------------------------------------------------
 static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 {
 
@@ -1218,6 +1258,8 @@ static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 				//turn button led on
 				led_setValue(1, ledNr);
 			} else {
+				//--- buttons 9-16 play the punch-in fx
+				buttonHandler_punchPressed(seqButtonPressed);
 				/*
 				 //moved pattern select to select buttons
 				 //pattern
@@ -1289,6 +1331,8 @@ static void buttonHandler_seqButtonReleased(uint8_t seqButtonPressed)
 {
 
 	uint8_t ledNr = led_idx2StepLed(seqButtonPressed);
+
+	if(buttonHandler_punchReleased(seqButtonPressed)) return;
 
 	if(buttonHandler_stateMemory.selectButtonMode == SEQ_LAST_STEP)
 	{
@@ -1942,8 +1986,9 @@ void buttonHandler_buttonPressed(uint8_t buttonNr) {
 			// holding down the copy button does a realtime erase on the active voice
 			else if(buttonHandler_stateMemory.seqRecording && buttonHandler_stateMemory.seqRunning) {
 				buttonHandler_stateMemory.seqErasing=1;
+				//on the perf page the punch fx track is erased instead of the active voice
 				frontPanel_sendData(SEQ_CC, SEQ_ERASE_ON_OFF,
-						buttonHandler_stateMemory.seqErasing);
+						menu_activePage == PERF_PAGE ? 2 : 1);
 				// **RECORD todo update the display
 			} else {
 

@@ -1000,6 +1000,10 @@ static void frontParser_handleSeqCC()
 		seq_setRollRate(cortex_midiMsg.data2);
 		break;
 
+	case FRONT_SEQ_PUNCH_FX:
+		PunchFx_setLive(cortex_midiMsg.data2);
+		break;
+
 	case FRONT_SEQ_ROLL_ON_OFF:
 	{
 

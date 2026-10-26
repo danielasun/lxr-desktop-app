@@ -236,6 +236,7 @@ void seq_copyPatternToBackupBuffer(uint8_t patternNr)
 
 	patternBackupBuffer.shuffle = seq_patternSet.shuffle[patternNr];;
 	patternBackupBuffer.kitNr = seq_patternSet.kitNr[patternNr];
+	memcpy(&patternBackupBuffer.punchFx, &seq_patternSet.punchFx[patternNr], PUNCH_STEPS);
 
 }
 //------------------------------------------------------------------------------
@@ -251,6 +252,7 @@ void seq_copyBackupBufferToPattern(uint8_t patternNr)
 
 	seq_patternSet.shuffle[patternNr] = patternBackupBuffer.shuffle;
 	seq_patternSet.kitNr[patternNr] = patternBackupBuffer.kitNr;
+	memcpy(&seq_patternSet.punchFx[patternNr], &patternBackupBuffer.punchFx, PUNCH_STEPS);
 }
 /*
 //------------------------------------------------------------------------------
@@ -2516,9 +2518,11 @@ void seq_setRecordingMode(uint8_t active)
 	seq_recordActive = active;
 }
 
+// active: 0 = off, 1 = erase the active track, 2 = erase the punch fx track
 void seq_setErasingMode(uint8_t active)
 {
-	seq_eraseActive = active;
+	seq_eraseActive = active == 1;
+	PunchFx_setErase(active == 2);
 }
 
 //------------------------------------------------------------------------------
@@ -2562,6 +2566,8 @@ void seq_clearPattern(uint8_t pattern)
 	int i;
 	for(i=0;i<NUM_TRACKS;i++)
 		seq_clearTrack(i, pattern);
+
+	memset(seq_patternSet.punchFx[pattern], PUNCH_OFF, PUNCH_STEPS);
 }
 
 //------------------------------------------------------------------------------
@@ -2647,6 +2653,7 @@ void seq_copyPattern(uint8_t src, uint8_t dst)
 		seq_patternSet.shuffle[dst] = seq_patternSet.shuffle[src];
 		seq_patternSet.kitNr[dst] = seq_patternSet.kitNr[src];
 	}
+	memcpy(seq_patternSet.punchFx[dst], seq_patternSet.punchFx[src], PUNCH_STEPS);
 }
 //------------------------------------------------------------------------------
 void seq_setActiveAutomationTrack(uint8_t trackNr)

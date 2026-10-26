@@ -453,6 +453,14 @@ FRESULT preset_LoadTmpPat()
 
 		}
 
+		//punch fx track, missing in tmp files written by older firmware
+		if(success)
+		{
+			f_read((FIL*)&SDFile,(void*)seq_patternSet.punchFx[patternNr],PUNCH_STEPS,&bytesRead);
+			if(bytesRead != PUNCH_STEPS)
+				memset(seq_patternSet.punchFx[patternNr], PUNCH_OFF, PUNCH_STEPS);
+		}
+
 		if( success == 0)
 		{
 
@@ -576,6 +584,9 @@ FRESULT preset_saveTmpPat()
 
 		//write associated kit nr
 		f_write((FIL*)&SDFile,&seq_patternSet.kitNr[presetNr],sizeof(uint8_t),&bytesWritten);
+
+		//Pattern V4 and up => punch fx track
+		f_write((FIL*)&SDFile,seq_patternSet.punchFx[presetNr],PUNCH_STEPS,&bytesWritten);
 
 #endif
 
@@ -1622,6 +1633,9 @@ static void preset_writePatternData(uint8_t patternNr)
 		//write associated kit nr
 		f_write((FIL*)&SDFile,&seq_patternSet.kitNr[patternNr],sizeof(uint8_t),&bytesWritten);
 
+		//Pattern V4 and up => punch fx track
+		f_write((FIL*)&SDFile,seq_patternSet.punchFx[patternNr],PUNCH_STEPS,&bytesWritten);
+
 #endif
 }
 
@@ -1680,7 +1694,7 @@ FRESULT preset_savePatternSD(uint8_t presetNr)
 	res = f_write((FIL*)&SDFile,(void*)savefileNames[presetNr][PATTERN_NAMES],8,&bytesWritten);
 	if(res != FR_OK) return res;
 	//write version tag
-	res = f_write((FIL*)&SDFile,"PatV03",6,&bytesWritten);
+	res = f_write((FIL*)&SDFile,"PatV04",6,&bytesWritten);
 	if(res != FR_OK) return res;
 
 	//write pattern data
@@ -1964,6 +1978,17 @@ static uint8_t preset_readPatternData(uint8_t patternNr, uint8_t dataVersion)
 		f_read((FIL*)&SDFile,(void*)&seq_patternSet.kitNr[patternNr],sizeof(uint8_t),&bytesRead);
 		if(bytesRead == 0) success = 0;
 
+	}
+
+	//Pattern V4 and up => punch fx track
+	if(dataVersion > 3)
+	{
+		f_read((FIL*)&SDFile,(void*)seq_patternSet.punchFx[patternNr],PUNCH_STEPS,&bytesRead);
+		if(bytesRead != PUNCH_STEPS) success = 0;
+	}
+	else
+	{
+		memset(seq_patternSet.punchFx[patternNr], PUNCH_OFF, PUNCH_STEPS);
 	}
 
 	return success;

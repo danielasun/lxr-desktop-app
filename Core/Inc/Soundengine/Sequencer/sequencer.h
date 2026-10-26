@@ -21,6 +21,7 @@
 #include "Soundengine/globals.h"
 #include "Preset/SeqStep.h"
 #include "Parameters.h"
+#include "Soundengine/PunchFx.h"
 
  /**<
   * we have 6 voices
@@ -103,6 +104,7 @@ typedef struct PatternSetStruct
 	uint8_t length[NUM_PATTERN][NUM_TRACKS];	//only used in euklid generator?
 	uint8_t shuffle[NUM_PATTERN];
 	uint8_t kitNr[NUM_PATTERN];
+	uint8_t punchFx[NUM_PATTERN][PUNCH_STEPS];	//punch-in effect per step, PUNCH_OFF = none
 }PatternSet;
 
 typedef struct PatternBackupBufferStruct
@@ -114,6 +116,7 @@ typedef struct PatternBackupBufferStruct
 	uint8_t length[NUM_TRACKS];	//only used in euklid generator?
 	uint8_t shuffle;
 	uint8_t kitNr;
+	uint8_t punchFx[PUNCH_STEPS];
 }PatternBackupBuffer;
 
 /*
@@ -129,6 +132,7 @@ extern uint8_t seq_activePattern;
 extern uint8_t seq_pendingPattern;
 extern uint8_t seq_newPatternAvailable;
 extern uint8_t seq_prescaleCounter;
+extern uint8_t seq_recordActive;
 
 //extern PatternSet* seq_activePatternSetPtr;
 
@@ -244,6 +248,8 @@ void seq_deleteRow();
 void seq_insertRow();
 //------------------------------------------------------------------------------
 uint8_t seq_isRunning();
+//------------------------------------------------------------------------------
+uint8_t seq_getLongestTrack();
 //------------------------------------------------------------------------------
 uint8_t seq_isStepActive(uint8_t voice, uint8_t stepNr, uint8_t patternNr);
 //------------------------------------------------------------------------------
