@@ -7,7 +7,7 @@
  *
  * The effects are split in 2 groups that can be stacked:
  * one time effect (repeat, reverse, tape stop) followed by one tone effect (crush, filters).
- * Step button 8 adds a master soft clip on top of both.
+ * Step button 8 adds a master soft clip on top of both, recorded in the punch track.
  *
  * Copyright (C) 2012-2026 Erica Synths
  * SPDX-License-Identifier: GPL-3.0-only
@@ -50,8 +50,10 @@ enum PunchFxGroupEnum
 	PUNCH_NUM_GROUPS
 };
 
-//a punch track step holds the time effect in the lower and the tone effect in the upper nibble
-#define PUNCH_STEP_TIME(step)	((step) & 0x0f)
+//a punch track step holds the time effect in bits 0-2, the distortion flag in bit 3
+//(no time effect uses it; the largest is PUNCH_TAPESTOP) and the tone effect in the upper nibble
+#define PUNCH_STEP_DISTORT	0x08
+#define PUNCH_STEP_TIME(step)	((step) & 0x07)
 #define PUNCH_STEP_TONE(step)	((step) >> 4)
 
 //SEQ_PUNCH_FX data2: bit 4 = group, bits 0-3 = type (PUNCH_OFF releases the group)

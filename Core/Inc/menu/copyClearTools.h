@@ -35,6 +35,7 @@ enum
 	CLEAR_PATTERN,
 	CLEAR_AUTOMATION1,
 	CLEAR_AUTOMATION2,
+	CLEAR_PUNCH,
 };
 extern uint8_t copyClear_Mode;
 

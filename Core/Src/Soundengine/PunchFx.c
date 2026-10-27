@@ -10,7 +10,8 @@
  *
  * There are 2 slots that can play at the same time: the time slot (repeats,
  * reverse, tape stop) feeds the tone slot (crush, filter sweeps). Performance
- * button 8 runs a master soft clip after both.
+ * button 8 runs a master soft clip after both. The clip is recorded into the
+ * punch track with the other effects and played back on those steps.
  *
  * Copyright (C) 2012-2026 Erica Synths
  * SPDX-License-Identifier: GPL-3.0-only
@@ -103,7 +104,10 @@ static struct
 	int16_t held[PUNCH_NUM_CH];
 
 	//perf button 8, master soft clip
-	volatile uint8_t distort;
+	volatile uint8_t distort;		//held on the panel
+	uint8_t lastDistort;
+	uint8_t distortRecNext;			//pressed late in a step -> record on the next one
+	uint8_t distortPlay;			//live hold, or the recorded step
 	float distortMix;
 } pfx;
 
@@ -280,6 +284,9 @@ static void punch_handleSteps(uint32_t frames)
 	uint8_t* track = seq_patternSet.punchFx[seq_activePattern];
 	uint8_t live[PUNCH_NUM_GROUPS];
 	uint8_t pressed[PUNCH_NUM_GROUPS];
+	const uint8_t liveDistort = pfx.distort;
+	const uint8_t distortPressed = liveDistort && !pfx.lastDistort;
+	pfx.lastDistort = liveDistort;
 
 	for(uint8_t g=0;g<PUNCH_NUM_GROUPS;g++)
 	{
@@ -312,6 +319,7 @@ static void punch_handleSteps(uint32_t frames)
 			//overdub: a held group replaces only its own part of the step
 			uint8_t timeFx = punch_decodeStep(track[pfx.curStep], PUNCH_GROUP_TIME);
 			uint8_t toneFx = punch_decodeStep(track[pfx.curStep], PUNCH_GROUP_TONE);
+			uint8_t dist = track[pfx.curStep] & PUNCH_STEP_DISTORT;
 			uint8_t changed = 0;
 			for(uint8_t g=0;g<PUNCH_NUM_GROUPS;g++)
 			{
@@ -325,9 +333,15 @@ static void punch_handleSteps(uint32_t frames)
 				}
 				s->recNext = PUNCH_OFF;
 			}
+			if(seq_recordActive && (liveDistort || pfx.distortRecNext))
+			{
+				dist = PUNCH_STEP_DISTORT;
+				changed = 1;
+			}
+			pfx.distortRecNext = 0;
 			if(changed)
 			{
-				track[pfx.curStep] = (uint8_t)(timeFx | (toneFx << 4));
+				track[pfx.curStep] = (uint8_t)(timeFx | (toneFx << 4) | dist);
 			}
 		}
 
@@ -340,7 +354,7 @@ static void punch_handleSteps(uint32_t frames)
 				{
 					uint8_t* step = &track[pfx.curStep];
 					if(g == PUNCH_GROUP_TIME)
-						*step = (uint8_t)((*step & 0xf0) | live[g]);
+						*step = (uint8_t)((*step & 0xf8) | live[g]);
 					else
 						*step = (uint8_t)((*step & 0x0f) | (live[g] << 4));
 				}
@@ -350,6 +364,13 @@ static void punch_handleSteps(uint32_t frames)
 				}
 			}
 		}
+		if(distortPressed && pfx.stepValid && seq_recordActive)
+		{
+			if(seq_getElapsedStepTimePercent() < 50.f)
+				track[pfx.curStep] |= PUNCH_STEP_DISTORT;
+			else
+				pfx.distortRecNext = 1;
+		}
 	}
 	else
 	{
@@ -357,6 +378,7 @@ static void punch_handleSteps(uint32_t frames)
 		pfx.stepStartValid = 0;
 		pfx.slot[PUNCH_GROUP_TIME].recNext = PUNCH_OFF;
 		pfx.slot[PUNCH_GROUP_TONE].recNext = PUNCH_OFF;
+		pfx.distortRecNext = 0;
 	}
 
 	for(uint8_t g=0;g<PUNCH_NUM_GROUPS;g++)
@@ -387,6 +409,12 @@ static void punch_handleSteps(uint32_t frames)
 			s->fadingOut = 0;
 		}
 	}
+
+	//held button overrides the track, otherwise the recorded steps play it back
+	uint8_t wantDistort = liveDistort;
+	if(!wantDistort && pfx.stepValid && (track[pfx.curStep] & PUNCH_STEP_DISTORT))
+		wantDistort = 1;
+	pfx.distortPlay = wantDistort;
 }
 //------------------------------------------------------------------------------
 static inline int16_t punch_read(uint8_t ch, uint32_t pos)
@@ -449,7 +477,7 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 	const uint8_t toneType = toneSlot->type;
 
 	if(timeType == PUNCH_OFF && timeSlot->mix <= 0.f && toneType == PUNCH_OFF && toneSlot->mix <= 0.f
-			&& !pfx.distort && pfx.distortMix <= 0.f)
+			&& !pfx.distortPlay && pfx.distortMix <= 0.f)
 	{
 		return;
 	}
@@ -588,11 +616,11 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 	}
 
 	//master soft clip, after the punch slots so a held filter or loop is distorted too
-	if(pfx.distort || pfx.distortMix > 0.f)
+	if(pfx.distortPlay || pfx.distortMix > 0.f)
 	{
 		for(uint32_t i=0;i<frames;i++)
 		{
-			const float target = pfx.distort ? 1.f : 0.f;
+			const float target = pfx.distortPlay ? 1.f : 0.f;
 			if(pfx.distortMix < target)
 			{
 				pfx.distortMix += PUNCH_XFADE_STEP;

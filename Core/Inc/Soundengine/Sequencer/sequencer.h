@@ -104,7 +104,7 @@ typedef struct PatternSetStruct
 	uint8_t length[NUM_PATTERN][NUM_TRACKS];	//only used in euklid generator?
 	uint8_t shuffle[NUM_PATTERN];
 	uint8_t kitNr[NUM_PATTERN];
-	uint8_t punchFx[NUM_PATTERN][PUNCH_STEPS];	//punch-in fx per step: time fx lower, tone fx upper nibble
+	uint8_t punchFx[NUM_PATTERN][PUNCH_STEPS];	//punch-in fx per step: time fx in bits 0-2, distortion in bit 3, tone fx in the upper nibble
 }PatternSet;
 
 typedef struct PatternBackupBufferStruct
@@ -281,6 +281,7 @@ void seq_clearTrack(uint8_t trackNr, uint8_t pattern);
 void seq_clearAutomation(uint8_t trackNr, uint8_t pattern, uint8_t automTrack);
 //------------------------------------------------------------------------------
 void seq_clearPattern(uint8_t pattern);
+void seq_clearPunchFx(uint8_t pattern);
 //------------------------------------------------------------------------------
 void seq_copyTrack(uint8_t srcNr, uint8_t dstNr, uint8_t pattern);
 //------------------------------------------------------------------------------

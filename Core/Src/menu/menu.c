@@ -1068,6 +1068,10 @@ static void menu_repaintSimplePage()
 			case CLEAR_AUTOMATION2:
 				strcpy(&editDisplayBuffer[0][7], "autom. 2]?");
 			break;
+
+			case CLEAR_PUNCH:
+				strcpy(&editDisplayBuffer[0][7], "punch]?");
+			break;
 		}
 
 
@@ -2804,7 +2808,7 @@ void menu_parseEncoder(int8_t inc, uint8_t button)
 					target--;
 				}
 			} else if(inc>0) {
-				if(target!=CLEAR_AUTOMATION2) {
+				if(target!=CLEAR_PUNCH) {
 					target++;
 				}
 			}

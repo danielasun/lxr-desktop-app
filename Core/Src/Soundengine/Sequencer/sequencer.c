@@ -2567,6 +2567,12 @@ void seq_clearPattern(uint8_t pattern)
 	for(i=0;i<NUM_TRACKS;i++)
 		seq_clearTrack(i, pattern);
 
+	seq_clearPunchFx(pattern);
+}
+//------------------------------------------------------------------------------
+void seq_clearPunchFx(uint8_t pattern)
+{
+	if(pattern >= NUM_PATTERN) return;
 	memset(seq_patternSet.punchFx[pattern], PUNCH_OFF, PUNCH_STEPS);
 }
 

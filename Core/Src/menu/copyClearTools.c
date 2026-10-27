@@ -65,6 +65,10 @@ void copyClear_executeClear()
 		case CLEAR_AUTOMATION2:
 			copyClear_clearTrackAutom(1);
 		break;
+
+		case CLEAR_PUNCH:
+			seq_clearPunchFx(menu_getViewedPattern());
+		break;
 	}
 	
 	copyClear_armClearMenu(0);
