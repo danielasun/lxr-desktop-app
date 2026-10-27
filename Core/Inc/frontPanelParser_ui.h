@@ -146,7 +146,7 @@ extern uint8_t frontPanel_sysexMode;
 #define SEQ_TRIGGER_OUT1_PPQ  0x37
 #define SEQ_TRIGGER_OUT2_PPQ  0x38
 #define SEQ_TRIGGER_GATE_MODE 0x39
-#define SEQ_PUNCH_FX		  0x3A // live punch-in effect, data2 = PunchFxTypeEnum (0 = release)
+#define SEQ_PUNCH_FX		  0x3A // live punch-in effect, data2 = PUNCH_MSG(group, type), type 0 releases the group
 
 //SysEx
 #define SYSEX_REQUEST_STEP_DATA			0x01

@@ -8,6 +8,9 @@
  * effects play back from it. Loops start on the last step boundary so the
  * first pass is identical to the live signal and the punch-in is seamless.
  *
+ * There are 2 slots that can play at the same time: the time slot (repeats,
+ * reverse, tape stop) feeds the tone slot (crush, filter sweeps).
+ *
  * Copyright (C) 2012-2026 Erica Synths
  * SPDX-License-Identifier: GPL-3.0-only
  *
@@ -42,14 +45,12 @@ typedef struct
 	float ic2;
 } PunchSvf;
 
-static int16_t punch_hist[2][PUNCH_HIST_FRAMES*2];
-
-static struct
+//one slot per effect group
+typedef struct
 {
 	//--- written by the UI ---
 	volatile uint8_t liveType;
 	volatile uint8_t liveTrig;		//incremented on every press -> retrigger
-	volatile uint8_t erase;
 
 	//--- audio side ---
 	uint8_t lastLiveTrig;
@@ -59,6 +60,14 @@ static struct
 	uint8_t type;					//effect currently rendered
 	uint8_t fadingOut;				//fade to dry before switching to a new effect
 	float mix;						//0 = dry, 1 = wet
+} PunchSlot;
+
+static int16_t punch_hist[2][PUNCH_HIST_FRAMES*2];
+
+static struct
+{
+	PunchSlot slot[PUNCH_NUM_GROUPS];
+	volatile uint8_t erase;
 
 	uint32_t wr;					//frames written to the history
 	uint8_t frozen;					//history writing stopped to keep a captured loop
@@ -99,11 +108,14 @@ void PunchFx_init()
 	memset(punch_hist, 0, sizeof(punch_hist));
 }
 //------------------------------------------------------------------------------
-void PunchFx_setLive(uint8_t type)
+void PunchFx_setLive(uint8_t group, uint8_t type)
 {
-	if(type >= PUNCH_NUM_TYPES) type = PUNCH_OFF;
-	pfx.liveType = type;
-	if(type != PUNCH_OFF) pfx.liveTrig++;
+	if(group >= PUNCH_NUM_GROUPS) return;
+	if(type >= PUNCH_NUM_TYPES || (type != PUNCH_OFF && PunchFx_getGroup(type) != group)) type = PUNCH_OFF;
+
+	PunchSlot* s = &pfx.slot[group];
+	s->liveType = type;
+	if(type != PUNCH_OFF) s->liveTrig++;
 }
 //------------------------------------------------------------------------------
 void PunchFx_setErase(uint8_t active)
@@ -127,18 +139,19 @@ static uint32_t punch_clampLen(uint32_t len)
 	return len;
 }
 //------------------------------------------------------------------------------
-static void punch_startSweep(float start, float end, uint32_t frames)
+// the recorded effect of a group on a punch track step
+static uint8_t punch_decodeStep(uint8_t step, uint8_t group)
 {
-	const float sweepFrames = (float)(punch_stepFrames() * PUNCH_SWEEP_STEPS);
-	pfx.fc = start;
-	pfx.fcEnd = end;
-	pfx.fcMul = powf(end/start, frames/sweepFrames);
-	memset(pfx.svf, 0, sizeof(pfx.svf));
+	const uint8_t type = group == PUNCH_GROUP_TIME ? PUNCH_STEP_TIME(step) : PUNCH_STEP_TONE(step);
+	if(type >= PUNCH_NUM_TYPES || PunchFx_getGroup(type) != group) return PUNCH_OFF;
+	return type;
 }
 //------------------------------------------------------------------------------
 // livePos is the history position of the first frame of the current block
-static void punch_start(uint8_t type, uint32_t livePos, uint32_t frames)
+static void punch_startTime(uint8_t type, uint32_t livePos)
 {
+	PunchSlot* s = &pfx.slot[PUNCH_GROUP_TIME];
+
 	if(pfx.frozen)
 	{
 		//history has a gap now
@@ -146,9 +159,9 @@ static void punch_start(uint8_t type, uint32_t livePos, uint32_t frames)
 		pfx.stepStartValid = 0;
 	}
 
-	pfx.type = type;
-	pfx.fadingOut = 0;
-	pfx.restart = 0;
+	s->type = type;
+	s->fadingOut = 0;
+	s->restart = 0;
 
 	const uint32_t stepFrames = punch_stepFrames();
 
@@ -182,7 +195,7 @@ static void punch_start(uint8_t type, uint32_t livePos, uint32_t frames)
 		if(len > livePos) len = livePos; //not enough history yet after boot
 		if(len < 4*PUNCH_EDGE)
 		{
-			pfx.type = PUNCH_OFF;
+			s->type = PUNCH_OFF;
 			break;
 		}
 		//play [livePos-len, livePos) backwards, the first output frame continues from the last live frame
@@ -206,6 +219,31 @@ static void punch_start(uint8_t type, uint32_t livePos, uint32_t frames)
 	}
 		break;
 
+	default:
+		s->type = PUNCH_OFF;
+		break;
+	}
+}
+//------------------------------------------------------------------------------
+static void punch_startSweep(float start, float end, uint32_t frames)
+{
+	const float sweepFrames = (float)(punch_stepFrames() * PUNCH_SWEEP_STEPS);
+	pfx.fc = start;
+	pfx.fcEnd = end;
+	pfx.fcMul = powf(end/start, frames/sweepFrames);
+	memset(pfx.svf, 0, sizeof(pfx.svf));
+}
+//------------------------------------------------------------------------------
+static void punch_startTone(uint8_t type, uint32_t frames)
+{
+	PunchSlot* s = &pfx.slot[PUNCH_GROUP_TONE];
+
+	s->type = type;
+	s->fadingOut = 0;
+	s->restart = 0;
+
+	switch(type)
+	{
 	case PUNCH_CRUSH:
 		pfx.holdCnt = 0;
 		break;
@@ -219,23 +257,29 @@ static void punch_start(uint8_t type, uint32_t livePos, uint32_t frames)
 		break;
 
 	default:
-		pfx.type = PUNCH_OFF;
+		s->type = PUNCH_OFF;
 		break;
 	}
 }
 //------------------------------------------------------------------------------
 // called once per block before rendering: follows the sequencer steps,
-// records/erases the punch track and decides which effect should play
+// records/erases the punch track and decides which effects should play
 static void punch_handleSteps(uint32_t frames)
 {
-	const uint8_t live = pfx.liveType;
 	uint8_t* track = seq_patternSet.punchFx[seq_activePattern];
+	uint8_t live[PUNCH_NUM_GROUPS];
+	uint8_t pressed[PUNCH_NUM_GROUPS];
 
-	const uint8_t pressed = pfx.liveTrig != pfx.lastLiveTrig;
-	if(pressed)
+	for(uint8_t g=0;g<PUNCH_NUM_GROUPS;g++)
 	{
-		pfx.lastLiveTrig = pfx.liveTrig;
-		pfx.restart = 1;
+		PunchSlot* s = &pfx.slot[g];
+		live[g] = s->liveType;
+		pressed[g] = s->liveTrig != s->lastLiveTrig;
+		if(pressed[g])
+		{
+			s->lastLiveTrig = s->liveTrig;
+			s->restart = 1;
+		}
 	}
 
 	if(seq_isRunning())
@@ -250,27 +294,49 @@ static void punch_handleSteps(uint32_t frames)
 			pfx.stepStartWr = pfx.wr;
 			pfx.stepStartValid = !pfx.frozen;
 
-			if(seq_recordActive && (live != PUNCH_OFF || pfx.recNext != PUNCH_OFF))
-			{
-				track[pfx.curStep] = live != PUNCH_OFF ? live : pfx.recNext;
-			}
-			else if(pfx.erase)
+			if(pfx.erase)
 			{
 				track[pfx.curStep] = PUNCH_OFF;
 			}
-			pfx.recNext = PUNCH_OFF;
+			//overdub: a held group replaces only its own part of the step
+			uint8_t timeFx = punch_decodeStep(track[pfx.curStep], PUNCH_GROUP_TIME);
+			uint8_t toneFx = punch_decodeStep(track[pfx.curStep], PUNCH_GROUP_TONE);
+			uint8_t changed = 0;
+			for(uint8_t g=0;g<PUNCH_NUM_GROUPS;g++)
+			{
+				PunchSlot* s = &pfx.slot[g];
+				const uint8_t rec = live[g] != PUNCH_OFF ? live[g] : s->recNext;
+				if(seq_recordActive && rec != PUNCH_OFF)
+				{
+					if(g == PUNCH_GROUP_TIME) timeFx = rec;
+					else toneFx = rec;
+					changed = 1;
+				}
+				s->recNext = PUNCH_OFF;
+			}
+			if(changed)
+			{
+				track[pfx.curStep] = (uint8_t)(timeFx | (toneFx << 4));
+			}
 		}
 
 		//quantise a press to the nearest step like the note recording does
-		if(pressed && pfx.stepValid && seq_recordActive && live != PUNCH_OFF)
+		for(uint8_t g=0;g<PUNCH_NUM_GROUPS;g++)
 		{
-			if(seq_getElapsedStepTimePercent() < 50.f)
+			if(pressed[g] && pfx.stepValid && seq_recordActive && live[g] != PUNCH_OFF)
 			{
-				track[pfx.curStep] = live;
-			}
-			else
-			{
-				pfx.recNext = live;
+				if(seq_getElapsedStepTimePercent() < 50.f)
+				{
+					uint8_t* step = &track[pfx.curStep];
+					if(g == PUNCH_GROUP_TIME)
+						*step = (uint8_t)((*step & 0xf0) | live[g]);
+					else
+						*step = (uint8_t)((*step & 0x0f) | (live[g] << 4));
+				}
+				else
+				{
+					pfx.slot[g].recNext = live[g];
+				}
 			}
 		}
 	}
@@ -278,31 +344,37 @@ static void punch_handleSteps(uint32_t frames)
 	{
 		pfx.stepValid = 0;
 		pfx.stepStartValid = 0;
-		pfx.recNext = PUNCH_OFF;
+		pfx.slot[PUNCH_GROUP_TIME].recNext = PUNCH_OFF;
+		pfx.slot[PUNCH_GROUP_TONE].recNext = PUNCH_OFF;
 	}
 
-	//live play overrides the recorded track
-	uint8_t want = live;
-	if(want == PUNCH_OFF && pfx.stepValid)
+	for(uint8_t g=0;g<PUNCH_NUM_GROUPS;g++)
 	{
-		want = track[pfx.curStep];
-		if(want >= PUNCH_NUM_TYPES) want = PUNCH_OFF;
-	}
+		PunchSlot* s = &pfx.slot[g];
 
-	if(want != pfx.type || pfx.restart)
-	{
-		if(pfx.type == PUNCH_OFF || pfx.mix <= 0.f)
+		//live play overrides the recorded track
+		uint8_t want = live[g];
+		if(want == PUNCH_OFF && pfx.stepValid)
 		{
-			punch_start(want, pfx.wr, frames);
+			want = punch_decodeStep(track[pfx.curStep], g);
+		}
+
+		if(want != s->type || s->restart)
+		{
+			if(s->type == PUNCH_OFF || s->mix <= 0.f)
+			{
+				if(g == PUNCH_GROUP_TIME) punch_startTime(want, pfx.wr);
+				else punch_startTone(want, frames);
+			}
+			else
+			{
+				s->fadingOut = 1;
+			}
 		}
 		else
 		{
-			pfx.fadingOut = 1;
+			s->fadingOut = 0;
 		}
-	}
-	else
-	{
-		pfx.fadingOut = 0;
 	}
 }
 //------------------------------------------------------------------------------
@@ -324,9 +396,26 @@ static inline float punch_edgeGain(uint32_t phase, uint32_t len, uint8_t firstPa
 	return g;
 }
 //------------------------------------------------------------------------------
+static inline void punch_rampMix(PunchSlot* s)
+{
+	const float target = (s->fadingOut || s->type == PUNCH_OFF) ? 0.f : 1.f;
+	if(s->mix < target)
+	{
+		s->mix += PUNCH_XFADE_STEP;
+		if(s->mix > target) s->mix = target;
+	}
+	else if(s->mix > target)
+	{
+		s->mix -= PUNCH_XFADE_STEP;
+		if(s->mix < target) s->mix = target;
+	}
+}
+//------------------------------------------------------------------------------
 void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 {
 	int16_t* outs[2] = {out1, out2};
+	PunchSlot* timeSlot = &pfx.slot[PUNCH_GROUP_TIME];
+	PunchSlot* toneSlot = &pfx.slot[PUNCH_GROUP_TONE];
 
 	punch_handleSteps(frames);
 
@@ -345,14 +434,17 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 		pfx.wr += frames;
 	}
 
-	if(pfx.type == PUNCH_OFF && pfx.mix <= 0.f)
+	const uint8_t timeType = timeSlot->type;
+	const uint8_t toneType = toneSlot->type;
+
+	if(timeType == PUNCH_OFF && timeSlot->mix <= 0.f && toneType == PUNCH_OFF && toneSlot->mix <= 0.f)
 	{
 		return;
 	}
 
 	//--- per block filter coefficients (TPT state variable filter) ---
 	float a1=0, a2=0, a3=0;
-	if(pfx.type == PUNCH_LPF || pfx.type == PUNCH_HPF)
+	if(toneType == PUNCH_LPF || toneType == PUNCH_HPF)
 	{
 		const float g = tanf(3.14159265f * pfx.fc / REAL_FS);
 		a1 = 1.f/(1.f + g*(g + PUNCH_SVF_DAMP));
@@ -366,21 +458,10 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 		}
 	}
 
-	const float target = (pfx.fadingOut || pfx.type == PUNCH_OFF) ? 0.f : 1.f;
-
 	for(uint32_t i=0;i<frames;i++)
 	{
-		//--- dry/wet ramp ---
-		if(pfx.mix < target)
-		{
-			pfx.mix += PUNCH_XFADE_STEP;
-			if(pfx.mix > target) pfx.mix = target;
-		}
-		else if(pfx.mix > target)
-		{
-			pfx.mix -= PUNCH_XFADE_STEP;
-			if(pfx.mix < target) pfx.mix = target;
-		}
+		punch_rampMix(timeSlot);
+		punch_rampMix(toneSlot);
 
 		//--- per frame state ---
 		uint32_t pos = 0;
@@ -388,13 +469,13 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 		float frac = 0.f;
 		uint8_t capture = 0;
 
-		switch(pfx.type)
+		switch(timeType)
 		{
 		case PUNCH_LOOP16:
 		case PUNCH_LOOP16T:
 		case PUNCH_LOOP32:
 		case PUNCH_REVERSE:
-			if(pfx.type == PUNCH_REVERSE)
+			if(timeType == PUNCH_REVERSE)
 				pos = pfx.loopStart + pfx.loopLen - 1 - pfx.phase;
 			else
 				pos = pfx.loopStart + pfx.phase;
@@ -424,13 +505,14 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 			if(pfx.rate < 0.f) pfx.rate = 0.f;
 			break;
 
-		case PUNCH_CRUSH:
-			capture = pfx.holdCnt == 0;
-			if(++pfx.holdCnt >= PUNCH_CRUSH_HOLD) pfx.holdCnt = 0;
-			break;
-
 		default:
 			break;
+		}
+
+		if(toneType == PUNCH_CRUSH)
+		{
+			capture = pfx.holdCnt == 0;
+			if(++pfx.holdCnt >= PUNCH_CRUSH_HOLD) pfx.holdCnt = 0;
 		}
 
 		//--- render all 4 channels ---
@@ -438,9 +520,10 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 		{
 			int16_t* o = &outs[ch>>1][i*2 + (ch&1)];
 			const float dry = *o;
-			float wet = dry;
 
-			switch(pfx.type)
+			//time slot
+			float wet = dry;
+			switch(timeType)
 			{
 			case PUNCH_LOOP16:
 			case PUNCH_LOOP16T:
@@ -457,21 +540,30 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 			}
 				break;
 
+			default:
+				break;
+			}
+			const float x = dry + (wet - dry)*timeSlot->mix;
+
+			//tone slot, processes the time slot output
+			float wet2 = x;
+			switch(toneType)
+			{
 			case PUNCH_CRUSH:
-				if(capture) pfx.held[ch] = *o & PUNCH_CRUSH_MASK;
-				wet = pfx.held[ch];
+				if(capture) pfx.held[ch] = (int16_t)__SSAT((int32_t)x, 16) & PUNCH_CRUSH_MASK;
+				wet2 = pfx.held[ch];
 				break;
 
 			case PUNCH_LPF:
 			case PUNCH_HPF:
 			{
 				PunchSvf* f = &pfx.svf[ch];
-				const float v3 = dry - f->ic2;
+				const float v3 = x - f->ic2;
 				const float v1 = a1*f->ic1 + a2*v3;
 				const float v2 = f->ic2 + a2*f->ic1 + a3*v3;
 				f->ic1 = 2.f*v1 - f->ic1;
 				f->ic2 = 2.f*v2 - f->ic2;
-				wet = pfx.type == PUNCH_LPF ? v2 : dry - PUNCH_SVF_DAMP*v1 - v2;
+				wet2 = toneType == PUNCH_LPF ? v2 : x - PUNCH_SVF_DAMP*v1 - v2;
 			}
 				break;
 
@@ -479,12 +571,12 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 				break;
 			}
 
-			*o = (int16_t)__SSAT((int32_t)(dry + (wet - dry)*pfx.mix), 16);
+			*o = (int16_t)__SSAT((int32_t)(x + (wet2 - x)*toneSlot->mix), 16);
 		}
 	}
 
 	//a loop is fully captured once the writer passed its end -> keep it from being overwritten
-	if(!pfx.frozen && pfx.type >= PUNCH_LOOP16 && pfx.type <= PUNCH_LOOP32
+	if(!pfx.frozen && timeType >= PUNCH_LOOP16 && timeType <= PUNCH_LOOP32
 			&& (pfx.wr - pfx.loopStart) >= pfx.loopLen)
 	{
 		pfx.frozen = 1;

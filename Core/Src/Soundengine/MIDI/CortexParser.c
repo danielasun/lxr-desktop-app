@@ -1001,7 +1001,7 @@ static void frontParser_handleSeqCC()
 		break;
 
 	case FRONT_SEQ_PUNCH_FX:
-		PunchFx_setLive(cortex_midiMsg.data2);
+		PunchFx_setLive((cortex_midiMsg.data2 >> 4) & 0x01, cortex_midiMsg.data2 & 0x0f);
 		break;
 
 	case FRONT_SEQ_ROLL_ON_OFF:

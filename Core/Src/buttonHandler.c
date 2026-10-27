@@ -55,7 +55,7 @@ volatile struct {
 
 static uint8_t buttonHandler_mutedVoices = 0;
 static uint8_t buttonHandler_punchHeld = 0;		//bit per held punch button (seq buttons 9-16)
-static uint8_t buttonHandler_punchLast = 0;		//last pressed punch button
+static uint8_t buttonHandler_punchLast[PUNCH_NUM_GROUPS];	//last pressed punch button per fx group
 volatile static int8_t buttonHandler_armedAutomationStep = NO_STEP_SELECTED;
 
 #define ARM_AUTOMATION		0x40
@@ -824,12 +824,15 @@ static void buttonHandler_setTrackRotation(uint8_t seqButtonPressed)
 */
 //--------------------------------------------------------
 // perf mode: seq buttons 9-16 play the punch-in fx while held
+// one time fx and one tone fx can be held at the same time
 static void buttonHandler_punchPressed(uint8_t seqButtonPressed)
 {
 	const uint8_t idx = seqButtonPressed - 8;
+	const uint8_t type = idx + 1;
+	const uint8_t group = PunchFx_getGroup(type);
 	buttonHandler_punchHeld |= (uint8_t)(1<<idx);
-	buttonHandler_punchLast = idx;
-	frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, idx + 1);
+	buttonHandler_punchLast[group] = idx;
+	frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, PUNCH_MSG(group, type));
 	led_setValue(1, led_idx2StepLed(seqButtonPressed));
 }
 //--------------------------------------------------------
@@ -844,19 +847,20 @@ static uint8_t buttonHandler_punchReleased(uint8_t seqButtonPressed)
 	buttonHandler_punchHeld &= (uint8_t)~(1<<idx);
 	led_setValue(0, led_idx2StepLed(seqButtonPressed));
 
-	if(idx == buttonHandler_punchLast)
+	const uint8_t group = PunchFx_getGroup(idx + 1);
+	if(idx == buttonHandler_punchLast[group])
 	{
-		//fall back to another button that is still held
+		//fall back to another button of the same group that is still held
 		uint8_t next = PUNCH_OFF;
 		for(uint8_t i=0;i<8;i++)
 		{
-			if(buttonHandler_punchHeld & (1<<i))
+			if((buttonHandler_punchHeld & (1<<i)) && PunchFx_getGroup(i + 1) == group)
 			{
 				next = i + 1;
-				buttonHandler_punchLast = i;
+				buttonHandler_punchLast[group] = i;
 			}
 		}
-		frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, next);
+		frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, PUNCH_MSG(group, next));
 	}
 	return 1;
 }
