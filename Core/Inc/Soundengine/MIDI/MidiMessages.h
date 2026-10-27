@@ -501,6 +501,7 @@ extern Param2EnumsDefinition Param2Enums;
 #define FRONT_SEQ_TRIGGER_OUT2_PPQ 		0x38
 #define FRONT_SEQ_TRIGGER_GATE_MODE 	0x39
 #define FRONT_SEQ_PUNCH_FX				0x3A	// live punch-in effect, data2 = PUNCH_MSG(group, type), type 0 releases the group
+#define FRONT_SEQ_PERF_DISTORT			0x3B	// performance button 8, data2 = 1 while held, 0 on release
 
 //codec control messages
 #define EQ_ON_OFF						0x01

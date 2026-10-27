@@ -9,7 +9,8 @@
  * first pass is identical to the live signal and the punch-in is seamless.
  *
  * There are 2 slots that can play at the same time: the time slot (repeats,
- * reverse, tape stop) feeds the tone slot (crush, filter sweeps).
+ * reverse, tape stop) feeds the tone slot (crush, filter sweeps). Performance
+ * button 8 runs a master soft clip after both.
  *
  * Copyright (C) 2012-2026 Erica Synths
  * SPDX-License-Identifier: GPL-3.0-only
@@ -32,10 +33,11 @@
 
 #define PUNCH_EDGE			32				//fade at loop seams [frames] to prevent clicks
 #define PUNCH_XFADE_STEP	(1.f/128.f)		//dry/wet ramp per frame when an effect starts/ends
-#define PUNCH_CRUSH_HOLD	6				//sample rate reduction factor
-#define PUNCH_CRUSH_MASK	((int16_t)0xF800)	//keep 5 bit
-#define PUNCH_SWEEP_STEPS	8				//filter sweep duration [steps]
-#define PUNCH_SVF_DAMP		0.8f			//2 - 2*resonance
+#define PUNCH_CRUSH_HOLD	5				//sample rate reduction factor
+#define PUNCH_CRUSH_MASK	((int16_t)0xF800)	//keep 6 bits
+#define PUNCH_SWEEP_STEPS	4				//filter sweep duration [steps]
+#define PUNCH_SVF_DAMP		0.4f			//2 - 2*resonance
+#define PUNCH_DIST_DRIVE	12.f			//soft-clip gain, full scale stays inside ±1
 
 #define PUNCH_NUM_CH		4				//2 DACs * stereo
 
@@ -99,6 +101,10 @@ static struct
 	//crush
 	uint8_t holdCnt;
 	int16_t held[PUNCH_NUM_CH];
+
+	//perf button 8, master soft clip
+	volatile uint8_t distort;
+	float distortMix;
 } pfx;
 
 //------------------------------------------------------------------------------
@@ -121,6 +127,11 @@ void PunchFx_setLive(uint8_t group, uint8_t type)
 void PunchFx_setErase(uint8_t active)
 {
 	pfx.erase = active;
+}
+//------------------------------------------------------------------------------
+void PunchFx_setDistort(uint8_t active)
+{
+	pfx.distort = active ? 1 : 0;
 }
 //------------------------------------------------------------------------------
 static uint32_t punch_stepFrames()
@@ -249,11 +260,11 @@ static void punch_startTone(uint8_t type, uint32_t frames)
 		break;
 
 	case PUNCH_LPF:
-		punch_startSweep(14000.f, 180.f, frames);
+		punch_startSweep(4000.f, 180.f, frames);
 		break;
 
 	case PUNCH_HPF:
-		punch_startSweep(30.f, 2500.f, frames);
+		punch_startSweep(400.f, 2500.f, frames);
 		break;
 
 	default:
@@ -437,7 +448,8 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 	const uint8_t timeType = timeSlot->type;
 	const uint8_t toneType = toneSlot->type;
 
-	if(timeType == PUNCH_OFF && timeSlot->mix <= 0.f && toneType == PUNCH_OFF && toneSlot->mix <= 0.f)
+	if(timeType == PUNCH_OFF && timeSlot->mix <= 0.f && toneType == PUNCH_OFF && toneSlot->mix <= 0.f
+			&& !pfx.distort && pfx.distortMix <= 0.f)
 	{
 		return;
 	}
@@ -572,6 +584,36 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 			}
 
 			*o = (int16_t)__SSAT((int32_t)(x + (wet2 - x)*toneSlot->mix), 16);
+		}
+	}
+
+	//master soft clip, after the punch slots so a held filter or loop is distorted too
+	if(pfx.distort || pfx.distortMix > 0.f)
+	{
+		for(uint32_t i=0;i<frames;i++)
+		{
+			const float target = pfx.distort ? 1.f : 0.f;
+			if(pfx.distortMix < target)
+			{
+				pfx.distortMix += PUNCH_XFADE_STEP;
+				if(pfx.distortMix > target) pfx.distortMix = target;
+			}
+			else if(pfx.distortMix > target)
+			{
+				pfx.distortMix -= PUNCH_XFADE_STEP;
+				if(pfx.distortMix < target) pfx.distortMix = target;
+			}
+			if(pfx.distortMix <= 0.f) continue;
+
+			for(uint8_t ch=0;ch<PUNCH_NUM_CH;ch++)
+			{
+				int16_t* o = &outs[ch>>1][i*2 + (ch&1)];
+				const float dry = *o;
+				float x = dry * (PUNCH_DIST_DRIVE/32768.f);
+				x = x/(1.f + fabsf(x));
+				const float wet = x*32767.f;
+				*o = (int16_t)__SSAT((int32_t)(dry + (wet - dry)*pfx.distortMix), 16);
+			}
 		}
 	}
 

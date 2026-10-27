@@ -56,6 +56,7 @@ volatile struct {
 static uint8_t buttonHandler_mutedVoices = 0;
 static uint8_t buttonHandler_punchHeld = 0;		//bit per held punch button (seq buttons 9-16)
 static uint8_t buttonHandler_punchLast[PUNCH_NUM_GROUPS];	//last pressed punch button per fx group
+static uint8_t buttonHandler_distortHeld = 0;	//perf button 8 (kit) soft clip
 volatile static int8_t buttonHandler_armedAutomationStep = NO_STEP_SELECTED;
 
 #define ARM_AUTOMATION		0x40
@@ -865,6 +866,26 @@ static uint8_t buttonHandler_punchReleased(uint8_t seqButtonPressed)
 	return 1;
 }
 //--------------------------------------------------------
+// perf mode: seq button 8 (kit) is a master soft clip while held
+static void buttonHandler_distortPressed(uint8_t ledNr)
+{
+	buttonHandler_distortHeld = 1;
+	frontPanel_sendData(SEQ_CC, SEQ_PERF_DISTORT, 1);
+	led_setValue(1, ledNr);
+}
+//--------------------------------------------------------
+// handled independent of the mode and shift, so a held clip is always released
+// returns 1 if this was the held distortion button
+static uint8_t buttonHandler_distortReleased(uint8_t seqButtonPressed)
+{
+	if(seqButtonPressed != SEQ_KIT || !buttonHandler_distortHeld) return 0;
+
+	buttonHandler_distortHeld = 0;
+	led_setValue(0, led_idx2StepLed(seqButtonPressed));
+	frontPanel_sendData(SEQ_CC, SEQ_PERF_DISTORT, 0);
+	return 1;
+}
+//--------------------------------------------------------
 static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 {
 
@@ -1254,13 +1275,20 @@ static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 			break;
 
 
-		case SELECT_MODE_PERF: //--- buttons 1-8 initiate a manual roll
+		case SELECT_MODE_PERF: //--- buttons 1-7 initiate a manual roll, button 8 is distortion
 			if (seqButtonPressed < 8) {
-				//turn roll on
-				frontPanel_sendData(SEQ_CC, SEQ_ROLL_ON_OFF,
-						(uint8_t) ((seqButtonPressed & 0xf) + 0x10));
-				//turn button led on
-				led_setValue(1, ledNr);
+				if(seqButtonPressed == SEQ_KIT)
+				{
+					buttonHandler_distortPressed(ledNr);
+				}
+				else
+				{
+					//turn roll on
+					frontPanel_sendData(SEQ_CC, SEQ_ROLL_ON_OFF,
+							(uint8_t) ((seqButtonPressed & 0xf) + 0x10));
+					//turn button led on
+					led_setValue(1, ledNr);
+				}
 			} else {
 				//--- buttons 9-16 play the punch-in fx
 				buttonHandler_punchPressed(seqButtonPressed);
@@ -1337,6 +1365,7 @@ static void buttonHandler_seqButtonReleased(uint8_t seqButtonPressed)
 	uint8_t ledNr = led_idx2StepLed(seqButtonPressed);
 
 	if(buttonHandler_punchReleased(seqButtonPressed)) return;
+	if(buttonHandler_distortReleased(seqButtonPressed)) return;
 
 	if(buttonHandler_stateMemory.selectButtonMode == SEQ_LAST_STEP)
 	{

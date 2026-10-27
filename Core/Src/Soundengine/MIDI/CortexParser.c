@@ -1004,6 +1004,10 @@ static void frontParser_handleSeqCC()
 		PunchFx_setLive((cortex_midiMsg.data2 >> 4) & 0x01, cortex_midiMsg.data2 & 0x0f);
 		break;
 
+	case FRONT_SEQ_PERF_DISTORT:
+		PunchFx_setDistort(cortex_midiMsg.data2);
+		break;
+
 	case FRONT_SEQ_ROLL_ON_OFF:
 	{
 

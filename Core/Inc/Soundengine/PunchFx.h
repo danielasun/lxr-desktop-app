@@ -6,7 +6,8 @@
  * into a 16 step punch track per pattern.
  *
  * The effects are split in 2 groups that can be stacked:
- * one time effect (repeat, reverse, tape stop) followed by one tone effect (crush, filters)
+ * one time effect (repeat, reverse, tape stop) followed by one tone effect (crush, filters).
+ * Step button 8 adds a master soft clip on top of both.
  *
  * Copyright (C) 2012-2026 Erica Synths
  * SPDX-License-Identifier: GPL-3.0-only
@@ -69,6 +70,9 @@ void PunchFx_setLive(uint8_t group, uint8_t type);
 
 /** 1: clear the punch track steps while the sequencer passes them */
 void PunchFx_setErase(uint8_t active);
+
+/** 1: master soft clip while performance button 8 is held */
+void PunchFx_setDistort(uint8_t active);
 
 /** process both interleaved stereo DAC buffers in place, after the mixer and FX bus */
 void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames);
