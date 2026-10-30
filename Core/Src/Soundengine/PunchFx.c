@@ -10,7 +10,8 @@
  *
  * There are 2 slots that can play at the same time: the time slot (repeats,
  * reverse, tape stop) feeds the tone slot (crush, filter sweeps). Performance
- * button 8 runs a master soft clip after both. The clip is recorded into the
+ * button 8 runs a master soft clip after both. While it is held, parameter
+ * encoder 1 sets the clip drive and the value is kept. The clip is recorded into the
  * punch track with the other effects and played back on those steps.
  *
  * Copyright (C) 2012-2026 Erica Synths
@@ -38,7 +39,10 @@
 #define PUNCH_CRUSH_MASK	((int16_t)0xF800)	//keep 6 bits
 #define PUNCH_SWEEP_STEPS	4				//filter sweep duration [steps]
 #define PUNCH_SVF_DAMP		0.4f			//2 - 2*resonance
-#define PUNCH_DIST_DRIVE	12.f			//soft-clip gain, full scale stays inside ±1
+// drive is stored in tenths: 10 = gain 1.0, 40 = gain 4.0
+#define PUNCH_DIST_DRIVE_MIN		10
+#define PUNCH_DIST_DRIVE_MAX		40
+#define PUNCH_DIST_DRIVE_DEFAULT	40
 
 #define PUNCH_NUM_CH		4				//2 DACs * stereo
 
@@ -109,6 +113,8 @@ static struct
 	uint8_t distortRecNext;			//pressed late in a step -> record on the next one
 	uint8_t distortPlay;			//live hold, or the recorded step
 	float distortMix;
+	uint8_t distortDrive;			//remembered tenths, PUNCH_DIST_DRIVE_MIN..MAX
+	volatile float distortGain;		//linear gain used by the sample loop
 } pfx;
 
 //------------------------------------------------------------------------------
@@ -116,6 +122,8 @@ void PunchFx_init()
 {
 	memset(&pfx, 0, sizeof(pfx));
 	memset(punch_hist, 0, sizeof(punch_hist));
+	pfx.distortDrive = PUNCH_DIST_DRIVE_DEFAULT;
+	pfx.distortGain = PUNCH_DIST_DRIVE_DEFAULT / 10.f;
 }
 //------------------------------------------------------------------------------
 void PunchFx_setLive(uint8_t group, uint8_t type)
@@ -136,6 +144,25 @@ void PunchFx_setErase(uint8_t active)
 void PunchFx_setDistort(uint8_t active)
 {
 	pfx.distort = active ? 1 : 0;
+}
+//------------------------------------------------------------------------------
+uint8_t PunchFx_distortIsHeld(void)
+{
+	return pfx.distort;
+}
+//------------------------------------------------------------------------------
+uint8_t PunchFx_getDistortDrive(void)
+{
+	return pfx.distortDrive;
+}
+//------------------------------------------------------------------------------
+void PunchFx_adjustDistortDrive(int8_t inc)
+{
+	int16_t v = (int16_t)pfx.distortDrive + inc;
+	if(v < PUNCH_DIST_DRIVE_MIN) v = PUNCH_DIST_DRIVE_MIN;
+	if(v > PUNCH_DIST_DRIVE_MAX) v = PUNCH_DIST_DRIVE_MAX;
+	pfx.distortDrive = (uint8_t)v;
+	pfx.distortGain = v / 10.f;
 }
 //------------------------------------------------------------------------------
 static uint32_t punch_stepFrames()
@@ -637,7 +664,7 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 			{
 				int16_t* o = &outs[ch>>1][i*2 + (ch&1)];
 				const float dry = *o;
-				float x = dry * (PUNCH_DIST_DRIVE/32768.f);
+				float x = dry * (pfx.distortGain/32768.f);
 				x = x/(1.f + fabsf(x));
 				const float wet = x*32767.f;
 				*o = (int16_t)__SSAT((int32_t)(dry + (wet - dry)*pfx.distortMix), 16);

@@ -8,6 +8,7 @@
  * The effects are split in 2 groups that can be stacked:
  * one time effect (repeat, reverse, tape stop) followed by one tone effect (crush, filters).
  * Step button 8 adds a master soft clip on top of both, recorded in the punch track.
+ * While that button is held, parameter encoder 1 sets the clip drive. The value is kept.
  *
  * Copyright (C) 2012-2026 Erica Synths
  * SPDX-License-Identifier: GPL-3.0-only
@@ -75,6 +76,15 @@ void PunchFx_setErase(uint8_t active);
 
 /** 1: master soft clip while performance button 8 is held */
 void PunchFx_setDistort(uint8_t active);
+
+/** 1 while performance button 8 is held */
+uint8_t PunchFx_distortIsHeld(void);
+
+/** remembered soft-clip drive in tenths, 10 = 1.0 through 40 = 4.0 */
+uint8_t PunchFx_getDistortDrive(void);
+
+/** move the remembered drive by inc encoder detents */
+void PunchFx_adjustDistortDrive(int8_t inc);
 
 /** process both interleaved stereo DAC buffers in place, after the mixer and FX bus */
 void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames);

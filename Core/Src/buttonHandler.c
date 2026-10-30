@@ -872,6 +872,8 @@ static void buttonHandler_distortPressed(uint8_t ledNr)
 	buttonHandler_distortHeld = 1;
 	frontPanel_sendData(SEQ_CC, SEQ_PERF_DISTORT, 1);
 	led_setValue(1, ledNr);
+	screensaver_touch();
+	menu_repaint();
 }
 //--------------------------------------------------------
 // handled independent of the mode and shift, so a held clip is always released
@@ -883,6 +885,7 @@ static uint8_t buttonHandler_distortReleased(uint8_t seqButtonPressed)
 	buttonHandler_distortHeld = 0;
 	led_setValue(0, led_idx2StepLed(seqButtonPressed));
 	frontPanel_sendData(SEQ_CC, SEQ_PERF_DISTORT, 0);
+	menu_repaint();
 	return 1;
 }
 //--------------------------------------------------------

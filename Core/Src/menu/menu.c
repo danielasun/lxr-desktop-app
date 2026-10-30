@@ -55,6 +55,7 @@ static void setNoteName(uint8_t num, char *buf);
 
 static void menu_moveToMenuItem(int8_t inc);
 static void menu_encoderChangeParameter(int8_t inc);
+static void menu_repaintPunchDistort(void);
 
 #define ARROW_SIGN '>'
 #define ARROW_UP 0b11000101
@@ -1811,13 +1812,35 @@ void menu_repaintGeneric()
 }
 
 //-----------------------------------------------------------------
+// first parameter column while the soft-clip punch button is held
+static void menu_repaintPunchDistort(void)
+{
+	memset(&editDisplayBuffer[0][0], ' ', 16);
+	memset(&editDisplayBuffer[1][0], ' ', 16);
+	editDisplayBuffer[0][16] = 0;
+	editDisplayBuffer[1][16] = 0;
+
+	memcpy(&editDisplayBuffer[0][0], "drv", 3);
+	upr_three(&editDisplayBuffer[0][0]);
+	{
+		const uint8_t tenths = PunchFx_getDistortDrive();
+		editDisplayBuffer[1][0] = (char)('0' + tenths / 10);
+		editDisplayBuffer[1][1] = '.';
+		editDisplayBuffer[1][2] = (char)('0' + tenths % 10);
+	}
+}
+//-----------------------------------------------------------------
 // repaint the screen
 void menu_repaint()
 {
 	if(screensaver_Active) return;
 
 	visibleCursor = 0;
-	if(menu_activePage == LOAD_PAGE || menu_activePage==SAVE_PAGE)
+	if(PunchFx_distortIsHeld())
+	{
+		menu_repaintPunchDistort();
+	}
+	else if(menu_activePage == LOAD_PAGE || menu_activePage==SAVE_PAGE)
 	{
 		//this is a special case because the load/save page differs from all the other pages
 		menu_repaintLoadSavePage();
@@ -3920,6 +3943,15 @@ uint8_t getMenuIndx(void)
 //-----------------------------------------------------------------
 uint8_t menu_parseKnobValue(uint8_t potNr, int16_t diff)
 {
+	//the four parameter encoders edit the held punch effect instead of the page
+	if(PunchFx_distortIsHeld())
+	{
+		screensaver_touch();
+		if(potNr == 0)
+			PunchFx_adjustDistortDrive((int8_t)(diff > 0 ? 1 : -1));
+		return potNr == 0;
+	}
+
 	screensaver_touch();
 	preset_touchTimer(PRESET_KIT_TIMER);
 
