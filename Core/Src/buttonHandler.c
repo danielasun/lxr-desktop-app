@@ -58,6 +58,7 @@ static uint8_t buttonHandler_punchHeld = 0;		//bit per held punch button, see bu
 static uint8_t buttonHandler_punchLast[PUNCH_NUM_GROUPS];	//last pressed punch button per fx group
 static uint8_t buttonHandler_distortHeld = 0;	//perf button 9 (morph) soft clip
 static uint8_t buttonHandler_octaveHeld = 0;	//perf button 11, screen while held
+static uint8_t buttonHandler_trackShiftHeld = 0;	//perf button 10, tracks play rotated voices while held
 static uint8_t buttonHandler_stutterType = PUNCH_LOOP16;	//repeat played by button 8, set by buttons 1-7
 static uint8_t buttonHandler_stutterRateHeld = 0;	//bit per button 1-7 pressed while button 8 was held
 //repeat rate of buttons 1-7 while button 8 is held
@@ -831,12 +832,12 @@ static void buttonHandler_setTrackRotation(uint8_t seqButtonPressed)
 }
 */
 //--------------------------------------------------------
-// punch button index: button 8 (the repeat) is 0, buttons 10 and 12-16 are 2 and 4-8 like their seq index - 8.
-// 0xff for buttons that are no punch fx. button 9 is the soft clip, button 11 the octave
+// punch button index: button 8 (the repeat) is 0, buttons 12-16 are 4-8 like their seq index - 8.
+// 0xff for buttons that are no punch fx. button 9 is the soft clip, 10 the track shift, 11 the octave
 static uint8_t buttonHandler_punchIdx(uint8_t seqButtonPressed)
 {
 	if(seqButtonPressed == SEQ_KIT) return 0;
-	if(seqButtonPressed <= SEQ_MORPH || seqButtonPressed == SEQ_PROJECT) return 0xff;
+	if(seqButtonPressed <= SEQ_SONG || seqButtonPressed == SEQ_PROJECT) return 0xff;
 	return seqButtonPressed - 8;
 }
 //--------------------------------------------------------
@@ -846,7 +847,7 @@ static uint8_t buttonHandler_punchType(uint8_t idx)
 	return idx == 0 ? buttonHandler_stutterType : idx + 1;
 }
 //--------------------------------------------------------
-// perf mode: seq button 8 and buttons 10-16 play the punch-in fx while held
+// perf mode: seq button 8 and buttons 12-16 play the punch-in fx while held
 // one time fx and one tone fx can be held at the same time
 static void buttonHandler_punchPressed(uint8_t seqButtonPressed)
 {
@@ -960,6 +961,33 @@ static uint8_t buttonHandler_octaveReleased(uint8_t seqButtonPressed)
 uint8_t buttonHandler_octaveIsHeld(void)
 {
 	return buttonHandler_octaveHeld;
+}
+//--------------------------------------------------------
+// perf mode: while button 10 is held every track plays the voice of another track.
+// encoder 1 sets how far they are rotated, the offset stays after release
+static void buttonHandler_trackShiftPressed(uint8_t ledNr)
+{
+	buttonHandler_trackShiftHeld = 1;
+	seq_setPerformanceTrackShift(1);
+	led_setValue(1, ledNr);
+	screensaver_touch();
+	menu_repaint();
+}
+//--------------------------------------------------------
+// handled independent of the mode and shift, so a held shift is always released
+static uint8_t buttonHandler_trackShiftReleased(uint8_t seqButtonPressed)
+{
+	if(seqButtonPressed != SEQ_SONG || !buttonHandler_trackShiftHeld) return 0;
+	buttonHandler_trackShiftHeld = 0;
+	seq_setPerformanceTrackShift(0);
+	led_setValue(0, led_idx2StepLed(seqButtonPressed));
+	menu_repaint();
+	return 1;
+}
+//--------------------------------------------------------
+uint8_t buttonHandler_trackShiftIsHeld(void)
+{
+	return buttonHandler_trackShiftHeld;
 }
 //--------------------------------------------------------
 // perf mode: seq button 9 (morph) is a master soft clip while held
@@ -1395,11 +1423,14 @@ static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 			} else if(seqButtonPressed == SEQ_MORPH) {
 				//button 9 is the master soft clip
 				buttonHandler_distortPressed(ledNr);
+			} else if(seqButtonPressed == SEQ_SONG) {
+				//button 10 rotates which voice each track plays
+				buttonHandler_trackShiftPressed(ledNr);
 			} else if(seqButtonPressed == SEQ_PROJECT) {
 				//button 11 raises every track one octave
 				buttonHandler_octavePressed(ledNr, 1);
 			} else {
-				//--- buttons 10-16 play the punch-in fx, except button 11
+				//--- buttons 12-16 play the punch-in fx
 				buttonHandler_punchPressed(seqButtonPressed);
 				/*
 				 //moved pattern select to select buttons
@@ -1476,6 +1507,7 @@ static void buttonHandler_seqButtonReleased(uint8_t seqButtonPressed)
 	if(buttonHandler_stutterRateReleased(seqButtonPressed)) return;
 	if(buttonHandler_punchReleased(seqButtonPressed)) return;
 	if(buttonHandler_octaveReleased(seqButtonPressed)) return;
+	if(buttonHandler_trackShiftReleased(seqButtonPressed)) return;
 	if(buttonHandler_distortReleased(seqButtonPressed)) return;
 
 	if(buttonHandler_stateMemory.selectButtonMode == SEQ_LAST_STEP)

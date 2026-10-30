@@ -12,7 +12,7 @@ Within one group, the last button you pressed is the one that plays. Releasing i
 |---|---|---|
 | 8 | Kit | Repeat, 1/16. Hold and press 1-7 to change the rate |
 | 9 | Morph | Soft clip |
-| 10 | Song | Repeat, 1/16 triplet |
+| 10 | Song | Track shift |
 | 11 | Project | Octave up. Shift: octave down |
 | 12 | Config | Crush |
 | 13 | Reload | Reverse |
@@ -20,11 +20,11 @@ Within one group, the last button you pressed is the one that plays. Releasing i
 | 15 | FX | DJ filter |
 | 16 | Pattern | Highpass sweep |
 
-Buttons 8, 10, 13 and 14 are the time group. Buttons 12, 15 and 16 are the tone group. Button 9 is the soft clip. Button 11 is the octave transpose.
+Buttons 8, 13 and 14 are the time group. Buttons 12, 15 and 16 are the tone group. Button 9 is the soft clip. Button 10 is the track shift. Button 11 is the octave transpose.
 
 ## Effects
 
-**Repeat.** Loops a slice of what was just played. Button 8 is one step long (1/16). Button 10 is a 1/16 triplet, two thirds of a step. The loop lines up with the step grid. The first pass is the live signal, so the punch-in does not jump, and the seam of each repeat is faded. At a slow tempo a loop that would be longer than the history (about 186 ms) is halved until it fits. That means 1/8 only plays at its full length above about 165 BPM, and 1/12 above about 110 BPM.
+**Repeat.** Loops a slice of what was just played. Button 8 is one step long (1/16). The loop lines up with the step grid. The first pass is the live signal, so the punch-in does not jump, and the seam of each repeat is faded. At a slow tempo a loop that would be longer than the history (about 186 ms) is halved until it fits. That means 1/8 only plays at its full length above about 165 BPM, and 1/12 above about 110 BPM.
 
 **Repeat rate.** While button 8 is held, buttons 1-7 change its rate instead of starting a roll:
 
@@ -33,6 +33,10 @@ Buttons 8, 10, 13 and 14 are the time group. Buttons 12, 15 and 16 are the tone 
 | Rate | 1/8 | 1/12 | 1/16 | 1/24 | 1/32 | 1/48 | 1/64 |
 
 The new rate stays until you release button 8; you do not need to keep holding the rate button. Each new press of button 8 starts again at 1/16. The screen shows **RPT** and the current rate while button 8 is held. Going to a shorter rate keeps repeating the audio that was already captured, like a roll. Going to a rate longer than the captured slice captures fresh audio. Each rate is recorded onto the punch track like the other effects.
+
+**Track shift.** While button 10 is held, the sequence of each track plays a different voice. With an offset of 1, the drum 1 steps play drum 2, the drum 2 steps play drum 3, and so on, and the open hihat steps wrap around to drum 1. Turn the first encoder while the button is held to set the offset from **0** to **6**; 0 plays every track on its own voice. The screen shows **TRK** and the offset while the button is held. The offset stays after you release the button, and starts at 1 after a restart.
+
+Each step keeps its own velocity, note and parameter locks. A parameter lock still changes the parameter it was recorded on, not the voice the step now plays. Only the sequencer is shifted: the rolls on buttons 1-7 and MIDI input still play their own voice. The track shift is not recorded onto the punch track.
 
 **Octave.** Each press of button 11 raises the playing note of every track by one octave. Shift and button 11 lowers every track by one octave. Notes that are already sounding move with it, and the next notes do too. The change stays after you release the button, up to four octaves either way. It is not stored in the pattern, and a restart puts it back to zero. While the button is held the screen shows **OCT** and the current octave count.
 

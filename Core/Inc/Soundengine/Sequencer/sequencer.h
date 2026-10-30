@@ -183,6 +183,12 @@ void seq_triggerVoice(uint8_t voiceNr, uint8_t vol, uint8_t note);
 int8_t seq_getPerformanceTranspose(void);
 /** dir +1 raises every track one octave, -1 lowers one octave. Kept until changed again. */
 void seq_stepPerformanceOctave(int8_t dir);
+/** 1 while perf button 10 is held: the sequenced steps of each track play the voice
+ * seq_getPerformanceTrackOffset() tracks further on, wrapping from open hihat to drum 1 */
+void seq_setPerformanceTrackShift(uint8_t active);
+/** voices the tracks are rotated by, 0..NUM_TRACKS-1. Kept after the button is released */
+uint8_t seq_getPerformanceTrackOffset(void);
+void seq_adjustPerformanceTrackOffset(int8_t inc);
 //------------------------------------------------------------------------------
 void seq_setShuffle(float shuffle);
 //------------------------------------------------------------------------------

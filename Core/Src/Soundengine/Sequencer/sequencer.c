@@ -169,6 +169,9 @@ static uint8_t seq_intIsStepActive(uint8_t voice, uint8_t stepNr, uint8_t patter
 static uint8_t seq_intIsMainStepActive(uint8_t voice, uint8_t mainStepNr, uint8_t pattern);
 static void seq_resetNote(Step *step);
 static int8_t seq_perfTranspose = 0;	//semitones, changed in octaves from perf button 11
+static volatile uint8_t seq_perfTrackShift = 0;		//1 while perf button 10 is held
+static uint8_t seq_perfTrackOffset = 1;				//voices the tracks are rotated by, 0..NUM_TRACKS-1
+static uint8_t seq_trackLastVoice[NUM_TRACKS];		//voice a track triggered last, for its note off
 static void seq_setStepIndexToStart();
 
 
@@ -210,10 +213,37 @@ void seq_stepPerformanceOctave(int8_t dir)
 	seq_retunePlayingNotes();
 }
 //------------------------------------------------------------------------------
+void seq_setPerformanceTrackShift(uint8_t active)
+{
+	seq_perfTrackShift = active ? 1 : 0;
+}
+//------------------------------------------------------------------------------
+uint8_t seq_getPerformanceTrackOffset(void)
+{
+	return seq_perfTrackOffset;
+}
+//------------------------------------------------------------------------------
+void seq_adjustPerformanceTrackOffset(int8_t inc)
+{
+	int16_t v = (int16_t)seq_perfTrackOffset + inc;
+	if(v < 0) v = 0;
+	if(v > NUM_TRACKS-1) v = NUM_TRACKS-1;
+	seq_perfTrackOffset = (uint8_t)v;
+}
+//------------------------------------------------------------------------------
+// the voice the steps of a track play. rotated while perf button 10 is held
+static uint8_t seq_trackVoice(uint8_t track)
+{
+	if(!seq_perfTrackShift) return track;
+	return (uint8_t)((track + seq_perfTrackOffset) % NUM_TRACKS);
+}
+//------------------------------------------------------------------------------
 void seq_init()
 {
 	int i;
 	seq_perfTranspose = 0;
+	seq_perfTrackShift = 0;
+	seq_perfTrackOffset = 1;
 
 	//give active song pointer a proper value
 	seq_activeSong = seq_songData[0];
@@ -524,18 +554,21 @@ static void seq_parseAutomationNodes(uint8_t track, Step* stepData)
 	autoNode_updateValue(&seq_automationNodes[track][1], stepData->param2Val);
 }
 //------------------------------------------------------------------------------
-void seq_triggerVoice(uint8_t voiceNr, uint8_t vol, uint8_t note)
+// the step of track plays voiceNr. the automation and the midi velocity come from the track,
+// the midi channel and note override from the voice
+static void seq_triggerTrackVoice(uint8_t track, uint8_t voiceNr, uint8_t vol, uint8_t note)
 {
 	uint8_t midiChan; // which midi channel to send a note on
 	uint8_t midiNote; // which midi note to send
 
-	if(voiceNr > 6) return;
+	if(voiceNr > 6 || track > 6) return;
 
+	seq_trackLastVoice[track] = voiceNr;
 
 #if USE_PATTERN_EDIT_BUFFER
-	seq_parseAutomationNodes(voiceNr, &patternBackupBuffer.seq_subStepPattern[voiceNr][seq_stepIndex[voiceNr]]);
+	seq_parseAutomationNodes(track, &patternBackupBuffer.seq_subStepPattern[track][seq_stepIndex[track]]);
 #else
-	seq_parseAutomationNodes(voiceNr, &seq_patternSet.seq_subStepPattern[seq_activePattern][voiceNr][seq_stepIndex[voiceNr]]);
+	seq_parseAutomationNodes(track, &seq_patternSet.seq_subStepPattern[seq_activePattern][track][seq_stepIndex[track]]);
 #endif
 
 	//turn the trigger off before sending the next one
@@ -569,10 +602,15 @@ void seq_triggerVoice(uint8_t voiceNr, uint8_t vol, uint8_t note)
 
 	//send the new note to midi/usb out
 #if USE_PATTERN_EDIT_BUFFER
-	seq_sendMidiNoteOn(midiChan, midiNote, patternBackupBuffer.seq_subStepPattern[voiceNr][seq_stepIndex[voiceNr]].volume&STEP_VOLUME_MASK);
+	seq_sendMidiNoteOn(midiChan, midiNote, patternBackupBuffer.seq_subStepPattern[track][seq_stepIndex[track]].volume&STEP_VOLUME_MASK);
 #else
-	seq_sendMidiNoteOn(midiChan, midiNote, seq_patternSet.seq_subStepPattern[seq_activePattern][voiceNr][seq_stepIndex[voiceNr]].volume&STEP_VOLUME_MASK);
+	seq_sendMidiNoteOn(midiChan, midiNote, seq_patternSet.seq_subStepPattern[seq_activePattern][track][seq_stepIndex[track]].volume&STEP_VOLUME_MASK);
 #endif
+}
+//------------------------------------------------------------------------------
+void seq_triggerVoice(uint8_t voiceNr, uint8_t vol, uint8_t note)
+{
+	seq_triggerTrackVoice(voiceNr, voiceNr, vol, note);
 }
 //------------------------------------------------------------------------------
 //has to be called AFTER the last pattern switch is finished, so the playing pattern is properly put into the temp buffer
@@ -1166,7 +1204,7 @@ void seq_processFlam(uint8_t idx)
 				chokeNext = 1;
 				const uint8_t vol = seq_patternSet.seq_subStepPattern[seq_activePattern][track][nextStep].volume&STEP_VOLUME_MASK;
 				const uint8_t note = seq_patternSet.seq_subStepPattern[seq_activePattern][track][nextStep].note;
-				seq_triggerVoice(track,vol,note);
+				seq_triggerTrackVoice(track,seq_trackVoice(track),vol,note);
 			}
 			else if((currentActive) && (chokeNext == 0))
 			{
@@ -1174,19 +1212,19 @@ void seq_processFlam(uint8_t idx)
 				chokeCurrent = 1;
 				const uint8_t vol = seq_patternSet.seq_subStepPattern[seq_activePattern][track][currentStep].volume&STEP_VOLUME_MASK;
 				const uint8_t note = seq_patternSet.seq_subStepPattern[seq_activePattern][track][currentStep].note;
-				seq_triggerVoice(track,vol,note);
+				seq_triggerTrackVoice(track,seq_trackVoice(track),vol,note);
 			}
 			else if((prevActive) && (chokeNext == 0) && (chokeCurrent == 0))
 			{
 				lastWasNoteOn[track] = 1;
 				const uint8_t vol = seq_patternSet.seq_subStepPattern[seq_activePattern][track][prevStep].volume&STEP_VOLUME_MASK;
 				const uint8_t note = seq_patternSet.seq_subStepPattern[seq_activePattern][track][prevStep].note;
-				seq_triggerVoice(track,vol,note);
+				seq_triggerTrackVoice(track,seq_trackVoice(track),vol,note);
 			}
 			else if (lastWasNoteOn[track])
 			{
 				lastWasNoteOn[track] = 0;
-				voiceControl_noteOff(track);
+				voiceControl_noteOff(seq_trackLastVoice[track]);
 			}
 #else
 

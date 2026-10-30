@@ -1878,6 +1878,19 @@ static void menu_repaintOctave(void)
 	numtostrps(&editDisplayBuffer[1][0], (int8_t)(seq_getPerformanceTranspose() / 12));
 }
 //-----------------------------------------------------------------
+// track offset while perf button 10 is held. the offset itself stays after release
+static void menu_repaintTrackShift(void)
+{
+	memset(&editDisplayBuffer[0][0], ' ', 16);
+	memset(&editDisplayBuffer[1][0], ' ', 16);
+	editDisplayBuffer[0][16] = 0;
+	editDisplayBuffer[1][16] = 0;
+
+	memcpy(&editDisplayBuffer[0][0], "trk", 3);
+	upr_three(&editDisplayBuffer[0][0]);
+	numtostrps(&editDisplayBuffer[1][0], (int8_t)seq_getPerformanceTrackOffset());
+}
+//-----------------------------------------------------------------
 // repeat rate while perf button 8 is held, buttons 1-7 change it
 static void menu_repaintStutter(void)
 {
@@ -1911,6 +1924,10 @@ void menu_repaint()
 	if(buttonHandler_octaveIsHeld())
 	{
 		menu_repaintOctave();
+	}
+	else if(buttonHandler_trackShiftIsHeld())
+	{
+		menu_repaintTrackShift();
 	}
 	else if(PunchFx_getEditFocus() == PUNCH_EDIT_DISTORT)
 	{
@@ -4031,6 +4048,14 @@ uint8_t getMenuIndx(void)
 //-----------------------------------------------------------------
 uint8_t menu_parseKnobValue(uint8_t potNr, int16_t diff)
 {
+	//encoder 1 sets the track offset while perf button 10 is held
+	if(buttonHandler_trackShiftIsHeld())
+	{
+		screensaver_touch();
+		if(potNr == 0)
+			seq_adjustPerformanceTrackOffset((int8_t)(diff > 0 ? 1 : -1));
+		return potNr == 0;
+	}
 	//the four parameter encoders edit the held punch effect instead of the page
 	const uint8_t punchEdit = PunchFx_getEditFocus();
 	if(punchEdit == PUNCH_EDIT_DISTORT)

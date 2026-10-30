@@ -186,6 +186,8 @@ void buttonHandler_showMuteLEDs();
 void buttonHandler_setRunStopState(uint8_t running);
 //--------------------------------------------------------
 uint8_t buttonHandler_octaveIsHeld(void);
+/** 1 while perf button 10, the track shift, is held */
+uint8_t buttonHandler_trackShiftIsHeld(void);
 /** 1 while perf button 8, the repeat, is held */
 uint8_t buttonHandler_stutterIsHeld(void);
 /** repeat type (PunchFxTypeEnum) played by perf button 8 */
