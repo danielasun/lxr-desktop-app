@@ -1878,7 +1878,7 @@ static void menu_repaintOctave(void)
 	numtostrps(&editDisplayBuffer[1][0], (int8_t)(seq_getPerformanceTranspose() / 12));
 }
 //-----------------------------------------------------------------
-// repeat rate while perf button 9 is held, buttons 1-7 change it
+// repeat rate while perf button 8 is held, buttons 1-7 change it
 static void menu_repaintStutter(void)
 {
 	memset(&editDisplayBuffer[0][0], ' ', 16);

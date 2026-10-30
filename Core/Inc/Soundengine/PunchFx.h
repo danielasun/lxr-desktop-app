@@ -4,13 +4,12 @@
  * Pocket Operator style punch-in effects on the master outputs.
  * Played live from the step buttons in perf mode and recordable
  * into a 16 step punch track per pattern.
- * Button 9 is a 1/16 repeat. Shift and button 9 is a 1/32 repeat.
- * While button 9 is held, buttons 1-7 set the repeat to 1/8, 1/12, 1/16, 1/24, 1/32, 1/48 or 1/64.
+ * Button 8 is a 1/16 repeat. While it is held, buttons 1-7 set the repeat to 1/8, 1/12, 1/16, 1/24, 1/32, 1/48 or 1/64.
  * Button 11 is not an effect: it transposes every track by an octave.
  *
  * The effects are split in 2 groups that can be stacked:
  * one time effect (repeat, reverse, tape stop) followed by one tone effect (crush, filters).
- * Step button 8 adds a master soft clip on top of both, recorded in the punch track.
+ * Step button 9 adds a master soft clip on top of both, recorded in the punch track.
  * While that button is held, parameter encoder 1 sets the clip drive. The value is kept.
  * While the crush button is held, encoders 1 and 2 set the sample-hold and the bit depth.
  * While the lowpass button is held, encoders 1 and 2 set the DJ-filter cutoff and resonance.
@@ -32,8 +31,7 @@
 //number of steps in the punch track of a pattern
 #define PUNCH_STEPS 16
 
-//recorded type ids. Button 9 plays LOOP16, shift+button 9 plays LOOP32,
-//buttons 1-7 change the rate of a held button 9.
+//recorded type ids. Button 8 plays LOOP16, buttons 1-7 change the rate of a held button 8.
 //Button 11 is the octave transpose and is not one of these types.
 //must stay below 16, SEQ_PUNCH_FX carries the type in 4 bits
 enum PunchFxTypeEnum
@@ -55,7 +53,7 @@ enum PunchFxTypeEnum
 	PUNCH_NUM_TYPES
 };
 
-//repeat rates of buttons 1-7 while button 9 is held
+//repeat rates of buttons 1-7 while button 8 is held
 #define PUNCH_NUM_RATES 7
 
 enum PunchFxGroupEnum
@@ -96,10 +94,10 @@ void PunchFx_setLive(uint8_t group, uint8_t type);
 /** 1: clear the punch track steps while the sequencer passes them */
 void PunchFx_setErase(uint8_t active);
 
-/** 1: master soft clip while performance button 8 is held */
+/** 1: master soft clip while performance button 9 is held */
 void PunchFx_setDistort(uint8_t active);
 
-/** 1 while performance button 8 is held */
+/** 1 while performance button 9 is held */
 uint8_t PunchFx_distortIsHeld(void);
 
 /** remembered soft-clip drive in tenths, 10 = 1.0 through 40 = 4.0 */

@@ -10,7 +10,7 @@
  *
  * There are 2 slots that can play at the same time: the time slot (repeats,
  * reverse, tape stop) feeds the tone slot (crush, filter sweeps). Performance
- * button 8 runs a master soft clip after both. While it is held, parameter
+ * button 9 runs a master soft clip after both. While it is held, parameter
  * encoder 1 sets the clip drive and the value is kept. While crush is held, encoders
  * 1 and 2 set how long each sample is held and how many bits are kept. The clip is recorded into the
  * punch track with the other effects and played back on those steps.
@@ -143,7 +143,7 @@ static struct
 
 	uint8_t editFocus;			//PunchEditFocusEnum, last held effect that has parameters
 
-	//perf button 8, master soft clip
+	//perf button 9, master soft clip
 	volatile uint8_t distort;		//held on the panel
 	uint8_t lastDistort;
 	uint8_t distortRecNext;			//pressed late in a step -> record on the next one
