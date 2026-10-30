@@ -57,6 +57,7 @@ static void menu_moveToMenuItem(int8_t inc);
 static void menu_encoderChangeParameter(int8_t inc);
 static void menu_repaintPunchDistort(void);
 static void menu_repaintPunchCrush(void);
+static void menu_repaintPunchDj(void);
 
 #define ARROW_SIGN '>'
 #define ARROW_UP 0b11000101
@@ -1847,6 +1848,22 @@ static void menu_repaintPunchCrush(void)
 	numtostrpu(&editDisplayBuffer[1][4], PunchFx_getCrushBits(), ' ');
 }
 //-----------------------------------------------------------------
+// cutoff and resonance while the DJ-filter punch button owns the encoders
+static void menu_repaintPunchDj(void)
+{
+	memset(&editDisplayBuffer[0][0], ' ', 16);
+	memset(&editDisplayBuffer[1][0], ' ', 16);
+	editDisplayBuffer[0][16] = 0;
+	editDisplayBuffer[1][16] = 0;
+
+	memcpy(&editDisplayBuffer[0][0], "cut", 3);
+	memcpy(&editDisplayBuffer[0][4], "res", 3);
+	upr_three(&editDisplayBuffer[0][0]);
+	upr_three(&editDisplayBuffer[0][4]);
+	numtostrpu(&editDisplayBuffer[1][0], PunchFx_getDjCut(), ' ');
+	numtostrpu(&editDisplayBuffer[1][4], PunchFx_getDjRes(), ' ');
+}
+//-----------------------------------------------------------------
 // repaint the screen
 void menu_repaint()
 {
@@ -1860,6 +1877,10 @@ void menu_repaint()
 	else if(PunchFx_getEditFocus() == PUNCH_EDIT_CRUSH)
 	{
 		menu_repaintPunchCrush();
+	}
+	else if(PunchFx_getEditFocus() == PUNCH_EDIT_DJ)
+	{
+		menu_repaintPunchDj();
 	}
 	else if(menu_activePage == LOAD_PAGE || menu_activePage==SAVE_PAGE)
 	{
@@ -3980,6 +4001,15 @@ uint8_t menu_parseKnobValue(uint8_t potNr, int16_t diff)
 			PunchFx_adjustCrushHold((int8_t)(diff > 0 ? 1 : -1));
 		else if(potNr == 1)
 			PunchFx_adjustCrushBits((int8_t)(diff > 0 ? 1 : -1));
+		return potNr < 2;
+	}
+	if(punchEdit == PUNCH_EDIT_DJ)
+	{
+		screensaver_touch();
+		if(potNr == 0)
+			PunchFx_adjustDjCut((int8_t)(diff > 0 ? 1 : -1));
+		else if(potNr == 1)
+			PunchFx_adjustDjRes((int8_t)(diff > 0 ? 1 : -1));
 		return potNr < 2;
 	}
 

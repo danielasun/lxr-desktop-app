@@ -43,7 +43,20 @@
 #define PUNCH_CRUSH_BITS_MAX		16		//int16 sample
 #define PUNCH_CRUSH_BITS_DEFAULT	5		//top 5 bits, mask 0xF800
 #define PUNCH_SWEEP_STEPS	4				//filter sweep duration [steps]
-#define PUNCH_SVF_DAMP		0.4f			//2 - 2*resonance
+#define PUNCH_SVF_DAMP		0.4f			//2 - 2*resonance, highpass sweep only
+
+// DJ filter on the lowpass button. Cut 50 is bypass.
+#define PUNCH_DJ_CUT_MIN		0
+#define PUNCH_DJ_CUT_MAX		100
+#define PUNCH_DJ_CUT_MID		50
+#define PUNCH_DJ_RES_MIN		0
+#define PUNCH_DJ_RES_MAX		100
+#define PUNCH_DJ_LP_OPEN_HZ		16000.f		//lowpass just below center
+#define PUNCH_DJ_LP_CLOSED_HZ	80.f		//lowpass at cut 0
+#define PUNCH_DJ_HP_OPEN_HZ		40.f		//highpass just above center
+#define PUNCH_DJ_HP_CLOSED_HZ	10000.f		//highpass at cut 100
+#define PUNCH_DJ_Q_MIN			0.70710678f	//Butterworth, res 0
+#define PUNCH_DJ_Q_MAX			8.f			//res 100
 // drive is stored in tenths: 10 = gain 1.0, 40 = gain 4.0
 #define PUNCH_DIST_DRIVE_MIN		10
 #define PUNCH_DIST_DRIVE_MAX		40
@@ -115,6 +128,15 @@ static struct
 	uint8_t crushBits;			//bits kept, 1..16
 	int16_t crushMask;
 
+	//DJ filter (lowpass button). mode 0 bypass, 1 lowpass, 2 highpass
+	uint8_t djCut;
+	uint8_t djRes;
+	volatile uint8_t djMode;
+	volatile float djFc;
+	volatile float djDamp;
+	uint8_t djRenderedMode;		//audio thread
+	float djFcSlew;				//audio thread
+
 	uint8_t editFocus;			//PunchEditFocusEnum, last held effect that has parameters
 
 	//perf button 8, master soft clip
@@ -137,6 +159,17 @@ void PunchFx_init()
 	pfx.crushHold = PUNCH_CRUSH_HOLD_DEFAULT;
 	pfx.crushBits = PUNCH_CRUSH_BITS_DEFAULT;
 	pfx.crushMask = (int16_t)((uint16_t)0xFFFF << (16 - PUNCH_CRUSH_BITS_DEFAULT));
+	pfx.djCut = PUNCH_DJ_CUT_MID;
+	pfx.djRes = PUNCH_DJ_RES_MIN;
+	pfx.djDamp = 1.f / PUNCH_DJ_Q_MIN;
+	pfx.djFc = 1000.f;
+}
+//------------------------------------------------------------------------------
+static uint8_t punch_focusForTone(uint8_t type)
+{
+	if(type == PUNCH_CRUSH) return PUNCH_EDIT_CRUSH;
+	if(type == PUNCH_LPF) return PUNCH_EDIT_DJ;
+	return pfx.distort ? PUNCH_EDIT_DISTORT : PUNCH_EDIT_NONE;
 }
 //------------------------------------------------------------------------------
 void PunchFx_setLive(uint8_t group, uint8_t type)
@@ -150,9 +183,9 @@ void PunchFx_setLive(uint8_t group, uint8_t type)
 
 	if(group == PUNCH_GROUP_TONE)
 	{
-		if(type == PUNCH_CRUSH)
-			pfx.editFocus = PUNCH_EDIT_CRUSH;
-		else if(pfx.editFocus == PUNCH_EDIT_CRUSH)
+		if(type == PUNCH_CRUSH || type == PUNCH_LPF)
+			pfx.editFocus = punch_focusForTone(type);
+		else if(pfx.editFocus == PUNCH_EDIT_CRUSH || pfx.editFocus == PUNCH_EDIT_DJ)
 			pfx.editFocus = pfx.distort ? PUNCH_EDIT_DISTORT : PUNCH_EDIT_NONE;
 	}
 }
@@ -168,7 +201,7 @@ void PunchFx_setDistort(uint8_t active)
 	if(pfx.distort)
 		pfx.editFocus = PUNCH_EDIT_DISTORT;
 	else if(pfx.editFocus == PUNCH_EDIT_DISTORT)
-		pfx.editFocus = (pfx.slot[PUNCH_GROUP_TONE].liveType == PUNCH_CRUSH) ? PUNCH_EDIT_CRUSH : PUNCH_EDIT_NONE;
+		pfx.editFocus = punch_focusForTone(pfx.slot[PUNCH_GROUP_TONE].liveType);
 }
 //------------------------------------------------------------------------------
 uint8_t PunchFx_distortIsHeld(void)
@@ -230,6 +263,57 @@ void PunchFx_adjustCrushBits(int8_t inc)
 	if(v > PUNCH_CRUSH_BITS_MAX) v = PUNCH_CRUSH_BITS_MAX;
 	pfx.crushBits = (uint8_t)v;
 	pfx.crushMask = punch_bitsToMask(pfx.crushBits);
+}
+//------------------------------------------------------------------------------
+static void punch_updateDj(void)
+{
+	uint8_t mode = 0;
+	float fc = pfx.djFc;
+	if(pfx.djCut < PUNCH_DJ_CUT_MID)
+	{
+		const float t = (float)(PUNCH_DJ_CUT_MID - pfx.djCut) / (float)PUNCH_DJ_CUT_MID;
+		fc = PUNCH_DJ_LP_OPEN_HZ * powf(PUNCH_DJ_LP_CLOSED_HZ / PUNCH_DJ_LP_OPEN_HZ, t);
+		mode = 1;
+	}
+	else if(pfx.djCut > PUNCH_DJ_CUT_MID)
+	{
+		const float t = (float)(pfx.djCut - PUNCH_DJ_CUT_MID) / (float)(PUNCH_DJ_CUT_MAX - PUNCH_DJ_CUT_MID);
+		fc = PUNCH_DJ_HP_OPEN_HZ * powf(PUNCH_DJ_HP_CLOSED_HZ / PUNCH_DJ_HP_OPEN_HZ, t);
+		mode = 2;
+	}
+	pfx.djFc = fc;
+	pfx.djMode = mode;
+}
+//------------------------------------------------------------------------------
+uint8_t PunchFx_getDjCut(void)
+{
+	return pfx.djCut;
+}
+//------------------------------------------------------------------------------
+void PunchFx_adjustDjCut(int8_t inc)
+{
+	int16_t v = (int16_t)pfx.djCut + inc;
+	if(v < PUNCH_DJ_CUT_MIN) v = PUNCH_DJ_CUT_MIN;
+	if(v > PUNCH_DJ_CUT_MAX) v = PUNCH_DJ_CUT_MAX;
+	pfx.djCut = (uint8_t)v;
+	punch_updateDj();
+}
+//------------------------------------------------------------------------------
+uint8_t PunchFx_getDjRes(void)
+{
+	return pfx.djRes;
+}
+//------------------------------------------------------------------------------
+void PunchFx_adjustDjRes(int8_t inc)
+{
+	int16_t v = (int16_t)pfx.djRes + inc;
+	if(v < PUNCH_DJ_RES_MIN) v = PUNCH_DJ_RES_MIN;
+	if(v > PUNCH_DJ_RES_MAX) v = PUNCH_DJ_RES_MAX;
+	pfx.djRes = (uint8_t)v;
+	{
+		const float q = PUNCH_DJ_Q_MIN * powf(PUNCH_DJ_Q_MAX / PUNCH_DJ_Q_MIN, pfx.djRes / 100.f);
+		pfx.djDamp = 1.f / q;
+	}
 }
 //------------------------------------------------------------------------------
 static uint32_t punch_stepFrames()
@@ -358,7 +442,9 @@ static void punch_startTone(uint8_t type, uint32_t frames)
 		break;
 
 	case PUNCH_LPF:
-		punch_startSweep(4000.f, 180.f, frames);
+		memset(pfx.svf, 0, sizeof(pfx.svf));
+		pfx.djRenderedMode = 0;
+		pfx.djFcSlew = pfx.djFc;
 		break;
 
 	case PUNCH_HPF:
@@ -576,9 +662,30 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 		return;
 	}
 
-	//--- per block filter coefficients (TPT state variable filter) ---
+	//--- per block filter coefficients (2-pole TPT state variable filter) ---
 	float a1=0, a2=0, a3=0;
-	if(toneType == PUNCH_LPF || toneType == PUNCH_HPF)
+	float filtK = PUNCH_SVF_DAMP;
+	uint8_t djMode = 0;
+	if(toneType == PUNCH_LPF)
+	{
+		djMode = pfx.djMode;
+		if(djMode != pfx.djRenderedMode)
+		{
+			memset(pfx.svf, 0, sizeof(pfx.svf));
+			pfx.djRenderedMode = djMode;
+			pfx.djFcSlew = pfx.djFc;
+		}
+		if(djMode)
+		{
+			pfx.djFcSlew += (pfx.djFc - pfx.djFcSlew) * 0.4f;
+			filtK = pfx.djDamp;
+			const float g = tanf(3.14159265f * pfx.djFcSlew / REAL_FS);
+			a1 = 1.f/(1.f + g*(g + filtK));
+			a2 = g*a1;
+			a3 = g*a2;
+		}
+	}
+	else if(toneType == PUNCH_HPF)
 	{
 		const float g = tanf(3.14159265f * pfx.fc / REAL_FS);
 		a1 = 1.f/(1.f + g*(g + PUNCH_SVF_DAMP));
@@ -689,6 +796,18 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 				break;
 
 			case PUNCH_LPF:
+				if(djMode)
+				{
+					PunchSvf* f = &pfx.svf[ch];
+					const float v3 = x - f->ic2;
+					const float v1 = a1*f->ic1 + a2*v3;
+					const float v2 = f->ic2 + a2*f->ic1 + a3*v3;
+					f->ic1 = 2.f*v1 - f->ic1;
+					f->ic2 = 2.f*v2 - f->ic2;
+					wet2 = djMode == 1 ? v2 : x - filtK*v1 - v2;
+				}
+				break;
+
 			case PUNCH_HPF:
 			{
 				PunchSvf* f = &pfx.svf[ch];
@@ -697,7 +816,7 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 				const float v2 = f->ic2 + a2*f->ic1 + a3*v3;
 				f->ic1 = 2.f*v1 - f->ic1;
 				f->ic2 = 2.f*v2 - f->ic2;
-				wet2 = toneType == PUNCH_LPF ? v2 : x - PUNCH_SVF_DAMP*v1 - v2;
+				wet2 = x - PUNCH_SVF_DAMP*v1 - v2;
 			}
 				break;
 

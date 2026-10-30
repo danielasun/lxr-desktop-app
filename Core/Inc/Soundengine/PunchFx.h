@@ -10,6 +10,7 @@
  * Step button 8 adds a master soft clip on top of both, recorded in the punch track.
  * While that button is held, parameter encoder 1 sets the clip drive. The value is kept.
  * While the crush button is held, encoders 1 and 2 set the sample-hold and the bit depth.
+ * While the lowpass button is held, encoders 1 and 2 set the DJ-filter cutoff and resonance.
  *
  * Copyright (C) 2012-2026 Erica Synths
  * SPDX-License-Identifier: GPL-3.0-only
@@ -38,7 +39,7 @@ enum PunchFxTypeEnum
 	PUNCH_CRUSH,		//bit crush + sample rate reduction
 	PUNCH_REVERSE,		//play the last 1/8 backwards
 	PUNCH_TAPESTOP,		//slow down to a halt
-	PUNCH_LPF,			//low pass sweep down
+	PUNCH_LPF,			//DJ filter: lowpass below center, bypass at center, highpass above
 	PUNCH_HPF,			//high pass sweep up
 
 	PUNCH_NUM_TYPES
@@ -91,7 +92,8 @@ enum PunchEditFocusEnum
 {
 	PUNCH_EDIT_NONE = 0,
 	PUNCH_EDIT_DISTORT,
-	PUNCH_EDIT_CRUSH
+	PUNCH_EDIT_CRUSH,
+	PUNCH_EDIT_DJ
 };
 
 /** which held punch button currently owns the parameter encoders */
@@ -104,6 +106,14 @@ void PunchFx_adjustCrushHold(int8_t inc);
 /** bits kept from the 16-bit sample. 16 is full resolution, 1 keeps only the sign */
 uint8_t PunchFx_getCrushBits(void);
 void PunchFx_adjustCrushBits(int8_t inc);
+
+/** DJ-filter cutoff, 0..100. 50 is bypass, below 50 is lowpass, above 50 is highpass */
+uint8_t PunchFx_getDjCut(void);
+void PunchFx_adjustDjCut(int8_t inc);
+
+/** DJ-filter resonance, 0..100. 0 is Butterworth, 100 is a strong peak */
+uint8_t PunchFx_getDjRes(void);
+void PunchFx_adjustDjRes(int8_t inc);
 
 /** process both interleaved stereo DAC buffers in place, after the mixer and FX bus */
 void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames);
