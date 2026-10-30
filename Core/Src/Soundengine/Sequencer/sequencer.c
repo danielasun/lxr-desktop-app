@@ -168,6 +168,7 @@ static void seq_sendProgChg(const uint8_t ptn);
 static uint8_t seq_intIsStepActive(uint8_t voice, uint8_t stepNr, uint8_t patternNr);
 static uint8_t seq_intIsMainStepActive(uint8_t voice, uint8_t mainStepNr, uint8_t pattern);
 static void seq_resetNote(Step *step);
+static int8_t seq_perfTranspose = 0;	//semitones, changed in octaves from perf button 11
 static void seq_setStepIndexToStart();
 
 
@@ -178,9 +179,41 @@ uint8_t seq_getMasterStepCnt()
 	return seq_masterStepCnt;
 }
 //------------------------------------------------------------------------------
+static void seq_retunePlayingNotes(void)
+{
+	uint8_t i;
+	for(i=0;i<NUM_DRUM_VOICES;i++)
+	{
+		osc_recalcFreq(&voiceArray[i].osc);
+		osc_recalcFreq(&voiceArray[i].modOsc);
+	}
+	osc_recalcFreq(&snareVoice.osc);
+	osc_recalcFreq(&cymbalVoice.osc);
+	osc_recalcFreq(&cymbalVoice.modOsc);
+	osc_recalcFreq(&cymbalVoice.modOsc2);
+	osc_recalcFreq(&hatVoice.osc);
+	osc_recalcFreq(&hatVoice.modOsc);
+	osc_recalcFreq(&hatVoice.modOsc2);
+}
+//------------------------------------------------------------------------------
+int8_t seq_getPerformanceTranspose(void)
+{
+	return seq_perfTranspose;
+}
+//------------------------------------------------------------------------------
+void seq_stepPerformanceOctave(int8_t dir)
+{
+	int16_t v = (int16_t)seq_perfTranspose + (int16_t)dir * 12;
+	if(v > 48) v = 48;
+	if(v < -48) v = -48;
+	seq_perfTranspose = (int8_t)v;
+	seq_retunePlayingNotes();
+}
+//------------------------------------------------------------------------------
 void seq_init()
 {
 	int i;
+	seq_perfTranspose = 0;
 
 	//give active song pointer a proper value
 	seq_activeSong = seq_songData[0];

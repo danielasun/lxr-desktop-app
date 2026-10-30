@@ -792,8 +792,8 @@ void osc_calcUserSampleFreq(OscInfo* osc)
 
 	 //get fine tune
 	 const float cent = midiParser_calcDetune(osc->midiFreq&0xff);
-	 //calc coarse tune
-	 int16_t note =  (osc->midiFreq>>8) + (baseNote-SEQ_DEFAULT_NOTE);
+	 //calc coarse tune, plus the performance octave transpose
+	 int16_t note =  (osc->midiFreq>>8) + (baseNote-SEQ_DEFAULT_NOTE) + seq_getPerformanceTranspose();
 	 if(note>127)note=127;
 	 if(note<0)note=0;
 
@@ -806,8 +806,8 @@ void osc_calcUserSampleFreq(OscInfo* osc)
  {
 	 //get fine tune
 	 const float cent = midiParser_calcDetune(osc->midiFreq&0xff);
-	 //calc coarse tune
-	 int16_t note =  (osc->midiFreq>>8) + (osc->baseNote-SEQ_DEFAULT_NOTE);
+	 //calc coarse tune, plus the performance octave transpose
+	 int16_t note =  (osc->midiFreq>>8) + (osc->baseNote-SEQ_DEFAULT_NOTE) + seq_getPerformanceTranspose();
 
 	 if(note>127)note=127;
  	 if(note<0)note=0;

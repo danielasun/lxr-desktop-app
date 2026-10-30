@@ -179,6 +179,11 @@ void seq_processFlam(uint8_t idx);
 //------------------------------------------------------------------------------
 void seq_triggerVoice(uint8_t voiceNr, uint8_t vol, uint8_t note);
 //------------------------------------------------------------------------------
+/** semitone offset applied to every track's playing note. Multiples of 12. */
+int8_t seq_getPerformanceTranspose(void);
+/** dir +1 raises every track one octave, -1 lowers one octave. Kept until changed again. */
+void seq_stepPerformanceOctave(int8_t dir);
+//------------------------------------------------------------------------------
 void seq_setShuffle(float shuffle);
 //------------------------------------------------------------------------------
 void seq_setTrackLength(uint8_t trackNr, uint8_t length);

@@ -2,8 +2,10 @@
  * PunchFx.h
  *
  * Pocket Operator style punch-in effects on the master outputs.
- * Played live from the step buttons 9-16 in perf mode and recordable
+ * Played live from the step buttons in perf mode and recordable
  * into a 16 step punch track per pattern.
+ * Button 9 is a 1/16 repeat. Shift and button 9 is a 1/32 repeat.
+ * Button 11 is not an effect: it transposes every track by an octave.
  *
  * The effects are split in 2 groups that can be stacked:
  * one time effect (repeat, reverse, tape stop) followed by one tone effect (crush, filters).
@@ -29,7 +31,8 @@
 //number of steps in the punch track of a pattern
 #define PUNCH_STEPS 16
 
-//order matches the perf mode step buttons 9-16
+//recorded type ids. Button 9 plays LOOP16, shift+button 9 plays LOOP32.
+//Button 11 is the octave transpose and is not one of these types.
 enum PunchFxTypeEnum
 {
 	PUNCH_OFF,

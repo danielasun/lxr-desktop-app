@@ -57,6 +57,8 @@ static uint8_t buttonHandler_mutedVoices = 0;
 static uint8_t buttonHandler_punchHeld = 0;		//bit per held punch button (seq buttons 9-16)
 static uint8_t buttonHandler_punchLast[PUNCH_NUM_GROUPS];	//last pressed punch button per fx group
 static uint8_t buttonHandler_distortHeld = 0;	//perf button 8 (kit) soft clip
+static uint8_t buttonHandler_octaveHeld = 0;	//perf button 11, screen while held
+static uint8_t buttonHandler_morphLoop32 = 0;	//button 9 was pressed with shift, so it plays 1/32
 volatile static int8_t buttonHandler_armedAutomationStep = NO_STEP_SELECTED;
 
 #define ARM_AUTOMATION		0x40
@@ -828,8 +830,16 @@ static void buttonHandler_setTrackRotation(uint8_t seqButtonPressed)
 // one time fx and one tone fx can be held at the same time
 static void buttonHandler_punchPressed(uint8_t seqButtonPressed)
 {
+	if(seqButtonPressed == SEQ_PROJECT) return;
 	const uint8_t idx = seqButtonPressed - 8;
-	const uint8_t type = idx + 1;
+	uint8_t type = idx + 1;
+	//button 9 is 1/16. Shift makes the same hold a 1/32.
+	if(seqButtonPressed == SEQ_MORPH)
+	{
+		buttonHandler_morphLoop32 = buttonHandler_getShift() ? 1 : 0;
+		if(buttonHandler_morphLoop32)
+			type = PUNCH_LOOP32;
+	}
 	const uint8_t group = PunchFx_getGroup(type);
 	buttonHandler_punchHeld |= (uint8_t)(1<<idx);
 	buttonHandler_punchLast[group] = idx;
@@ -860,13 +870,42 @@ static uint8_t buttonHandler_punchReleased(uint8_t seqButtonPressed)
 			if((buttonHandler_punchHeld & (1<<i)) && PunchFx_getGroup(i + 1) == group)
 			{
 				next = i + 1;
+				if(i == 0 && buttonHandler_morphLoop32)
+					next = PUNCH_LOOP32;
 				buttonHandler_punchLast[group] = i;
 			}
 		}
 		frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, PUNCH_MSG(group, next));
 	}
+	if(seqButtonPressed == SEQ_MORPH)
+		buttonHandler_morphLoop32 = 0;
 	menu_repaint();
 	return 1;
+}
+//--------------------------------------------------------
+// perf mode: button 11 raises every track one octave, shift lowers one octave.
+// the transpose stays after the button is released
+static void buttonHandler_octavePressed(uint8_t ledNr, int8_t dir)
+{
+	seq_stepPerformanceOctave(dir);
+	buttonHandler_octaveHeld = 1;
+	led_setValue(1, ledNr);
+	screensaver_touch();
+	menu_repaint();
+}
+//--------------------------------------------------------
+static uint8_t buttonHandler_octaveReleased(uint8_t seqButtonPressed)
+{
+	if(seqButtonPressed != SEQ_PROJECT || !buttonHandler_octaveHeld) return 0;
+	buttonHandler_octaveHeld = 0;
+	led_setValue(0, led_idx2StepLed(seqButtonPressed));
+	menu_repaint();
+	return 1;
+}
+//--------------------------------------------------------
+uint8_t buttonHandler_octaveIsHeld(void)
+{
+	return buttonHandler_octaveHeld;
 }
 //--------------------------------------------------------
 // perf mode: seq button 8 (kit) is a master soft clip while held
@@ -914,8 +953,11 @@ static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 			break;
 
 		case SEQ_KIT: //kit
-		case SEQ_MORPH: //morph
+			break;
 
+		case SEQ_MORPH: //morph: shift + button 9 is the 1/32 repeat
+			if(buttonHandler_getMode() == SELECT_MODE_PERF)
+				buttonHandler_punchPressed(seqButtonPressed);
 			break;
 
 		case SEQ_FX:
@@ -943,8 +985,9 @@ static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 			menu_switchPage(PATTERN_LOAD_PAGE);
 
 			break;
-		case SEQ_PROJECT: //Performance
-
+		case SEQ_PROJECT: //shift + button 11 lowers every track one octave
+			if(buttonHandler_getMode() == SELECT_MODE_PERF)
+				buttonHandler_octavePressed(ledNr, -1);
 			break;
 
 		case SEQ_RELOAD:
@@ -1295,8 +1338,11 @@ static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 					//turn button led on
 					led_setValue(1, ledNr);
 				}
+			} else if(seqButtonPressed == SEQ_PROJECT) {
+				//button 11 raises every track one octave
+				buttonHandler_octavePressed(ledNr, 1);
 			} else {
-				//--- buttons 9-16 play the punch-in fx
+				//--- buttons 9-16 play the punch-in fx, except button 11
 				buttonHandler_punchPressed(seqButtonPressed);
 				/*
 				 //moved pattern select to select buttons
@@ -1371,6 +1417,7 @@ static void buttonHandler_seqButtonReleased(uint8_t seqButtonPressed)
 	uint8_t ledNr = led_idx2StepLed(seqButtonPressed);
 
 	if(buttonHandler_punchReleased(seqButtonPressed)) return;
+	if(buttonHandler_octaveReleased(seqButtonPressed)) return;
 	if(buttonHandler_distortReleased(seqButtonPressed)) return;
 
 	if(buttonHandler_stateMemory.selectButtonMode == SEQ_LAST_STEP)

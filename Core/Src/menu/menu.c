@@ -58,6 +58,7 @@ static void menu_encoderChangeParameter(int8_t inc);
 static void menu_repaintPunchDistort(void);
 static void menu_repaintPunchCrush(void);
 static void menu_repaintPunchDj(void);
+static void menu_repaintOctave(void);
 
 #define ARROW_SIGN '>'
 #define ARROW_UP 0b11000101
@@ -1864,13 +1865,30 @@ static void menu_repaintPunchDj(void)
 	numtostrpu(&editDisplayBuffer[1][4], PunchFx_getDjRes(), ' ');
 }
 //-----------------------------------------------------------------
+// octave offset while perf button 11 is held. the transpose itself stays after release
+static void menu_repaintOctave(void)
+{
+	memset(&editDisplayBuffer[0][0], ' ', 16);
+	memset(&editDisplayBuffer[1][0], ' ', 16);
+	editDisplayBuffer[0][16] = 0;
+	editDisplayBuffer[1][16] = 0;
+
+	memcpy(&editDisplayBuffer[0][0], "oct", 3);
+	upr_three(&editDisplayBuffer[0][0]);
+	numtostrps(&editDisplayBuffer[1][0], (int8_t)(seq_getPerformanceTranspose() / 12));
+}
+//-----------------------------------------------------------------
 // repaint the screen
 void menu_repaint()
 {
 	if(screensaver_Active) return;
 
 	visibleCursor = 0;
-	if(PunchFx_getEditFocus() == PUNCH_EDIT_DISTORT)
+	if(buttonHandler_octaveIsHeld())
+	{
+		menu_repaintOctave();
+	}
+	else if(PunchFx_getEditFocus() == PUNCH_EDIT_DISTORT)
 	{
 		menu_repaintPunchDistort();
 	}
