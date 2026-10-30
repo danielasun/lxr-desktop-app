@@ -30,7 +30,7 @@ Buttons 9, 10, 11, 13 and 14 are the time group. Buttons 12, 15 and 16 are the t
 
 **Tape stop.** Slows playback to a halt over four steps. The level fades during the last part of the stop.
 
-**Crush.** Drops the sample rate to one fifth and keeps the top 6 bits.
+**Crush.** Holds a sample for several frames, then keeps only the top bits of that sample. Both are set while the button is held.
 
 **Lowpass.** Sweeps from 4 kHz down to 180 Hz over four steps.
 
@@ -40,11 +40,11 @@ Both filters use a mild resonance. The sweep restarts each time the button is pr
 
 ## Parameters
 
-Only the soft clip has a live parameter. The other effects use the fixed settings above.
+Hold a button that has parameters and the screen shows them until you release it. The values stay where you left them for the rest of the session, including when a recorded step plays that effect. They are not stored in the pattern, and a restart restores the defaults. If the soft clip and crush are both held, the button you pressed last owns the encoders. Releasing it gives the encoders back to the one still held.
 
-Hold button 8 and turn the first parameter encoder. The screen shows **DRV** and the value until you release the button. The range is **1.0** to **4.0** in steps of 0.1. This is the gain into the clip: 1.0 is a light shave of the peaks, and 4.0 is already a strong slam. The value stays where you left it for the rest of the session, including when a recorded step plays the clip. It is not stored in the pattern, and a restart sets it back to 4.0.
+**Soft clip, button 8.** The first encoder sets **DRV**, from **1.0** to **4.0** in steps of 0.1. This is the gain into the clip: 1.0 is a light shave of the peaks, and 4.0 is already a strong slam. It starts at 4.0. The other three encoders do nothing.
 
-The other three encoders do nothing while button 8 is held.
+**Crush, button 12.** The first encoder sets **HLD**, from **1** to **16**. 1 captures every frame, so the sample-rate reduction is off. 16 holds each sample for 16 frames. It starts at 5. The second encoder sets **MSK**, from **1** to **16**, which is how many bits of the 16-bit sample are kept. 16 is full resolution. 1 keeps only the sign. It starts at 5, the previous crush. The other two encoders do nothing.
 
 ## Recording
 

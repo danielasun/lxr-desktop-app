@@ -835,6 +835,8 @@ static void buttonHandler_punchPressed(uint8_t seqButtonPressed)
 	buttonHandler_punchLast[group] = idx;
 	frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, PUNCH_MSG(group, type));
 	led_setValue(1, led_idx2StepLed(seqButtonPressed));
+	screensaver_touch();
+	menu_repaint();
 }
 //--------------------------------------------------------
 // handled independent of the mode and shift, so a held fx is always released
@@ -863,6 +865,7 @@ static uint8_t buttonHandler_punchReleased(uint8_t seqButtonPressed)
 		}
 		frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, PUNCH_MSG(group, next));
 	}
+	menu_repaint();
 	return 1;
 }
 //--------------------------------------------------------

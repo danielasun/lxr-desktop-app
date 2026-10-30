@@ -11,7 +11,8 @@
  * There are 2 slots that can play at the same time: the time slot (repeats,
  * reverse, tape stop) feeds the tone slot (crush, filter sweeps). Performance
  * button 8 runs a master soft clip after both. While it is held, parameter
- * encoder 1 sets the clip drive and the value is kept. The clip is recorded into the
+ * encoder 1 sets the clip drive and the value is kept. While crush is held, encoders
+ * 1 and 2 set how long each sample is held and how many bits are kept. The clip is recorded into the
  * punch track with the other effects and played back on those steps.
  *
  * Copyright (C) 2012-2026 Erica Synths
@@ -35,8 +36,12 @@
 
 #define PUNCH_EDGE			32				//fade at loop seams [frames] to prevent clicks
 #define PUNCH_XFADE_STEP	(1.f/128.f)		//dry/wet ramp per frame when an effect starts/ends
-#define PUNCH_CRUSH_HOLD	5				//sample rate reduction factor
-#define PUNCH_CRUSH_MASK	((int16_t)0xF800)	//keep 6 bits
+#define PUNCH_CRUSH_HOLD_MIN		1		//1 captures every frame
+#define PUNCH_CRUSH_HOLD_MAX		16
+#define PUNCH_CRUSH_HOLD_DEFAULT	5
+#define PUNCH_CRUSH_BITS_MIN		1
+#define PUNCH_CRUSH_BITS_MAX		16		//int16 sample
+#define PUNCH_CRUSH_BITS_DEFAULT	5		//top 5 bits, mask 0xF800
 #define PUNCH_SWEEP_STEPS	4				//filter sweep duration [steps]
 #define PUNCH_SVF_DAMP		0.4f			//2 - 2*resonance
 // drive is stored in tenths: 10 = gain 1.0, 40 = gain 4.0
@@ -106,6 +111,11 @@ static struct
 	//crush
 	uint8_t holdCnt;
 	int16_t held[PUNCH_NUM_CH];
+	uint8_t crushHold;			//frames a sample is held, 1..16
+	uint8_t crushBits;			//bits kept, 1..16
+	int16_t crushMask;
+
+	uint8_t editFocus;			//PunchEditFocusEnum, last held effect that has parameters
 
 	//perf button 8, master soft clip
 	volatile uint8_t distort;		//held on the panel
@@ -124,6 +134,9 @@ void PunchFx_init()
 	memset(punch_hist, 0, sizeof(punch_hist));
 	pfx.distortDrive = PUNCH_DIST_DRIVE_DEFAULT;
 	pfx.distortGain = PUNCH_DIST_DRIVE_DEFAULT / 10.f;
+	pfx.crushHold = PUNCH_CRUSH_HOLD_DEFAULT;
+	pfx.crushBits = PUNCH_CRUSH_BITS_DEFAULT;
+	pfx.crushMask = (int16_t)((uint16_t)0xFFFF << (16 - PUNCH_CRUSH_BITS_DEFAULT));
 }
 //------------------------------------------------------------------------------
 void PunchFx_setLive(uint8_t group, uint8_t type)
@@ -134,6 +147,14 @@ void PunchFx_setLive(uint8_t group, uint8_t type)
 	PunchSlot* s = &pfx.slot[group];
 	s->liveType = type;
 	if(type != PUNCH_OFF) s->liveTrig++;
+
+	if(group == PUNCH_GROUP_TONE)
+	{
+		if(type == PUNCH_CRUSH)
+			pfx.editFocus = PUNCH_EDIT_CRUSH;
+		else if(pfx.editFocus == PUNCH_EDIT_CRUSH)
+			pfx.editFocus = pfx.distort ? PUNCH_EDIT_DISTORT : PUNCH_EDIT_NONE;
+	}
 }
 //------------------------------------------------------------------------------
 void PunchFx_setErase(uint8_t active)
@@ -144,6 +165,10 @@ void PunchFx_setErase(uint8_t active)
 void PunchFx_setDistort(uint8_t active)
 {
 	pfx.distort = active ? 1 : 0;
+	if(pfx.distort)
+		pfx.editFocus = PUNCH_EDIT_DISTORT;
+	else if(pfx.editFocus == PUNCH_EDIT_DISTORT)
+		pfx.editFocus = (pfx.slot[PUNCH_GROUP_TONE].liveType == PUNCH_CRUSH) ? PUNCH_EDIT_CRUSH : PUNCH_EDIT_NONE;
 }
 //------------------------------------------------------------------------------
 uint8_t PunchFx_distortIsHeld(void)
@@ -163,6 +188,48 @@ void PunchFx_adjustDistortDrive(int8_t inc)
 	if(v > PUNCH_DIST_DRIVE_MAX) v = PUNCH_DIST_DRIVE_MAX;
 	pfx.distortDrive = (uint8_t)v;
 	pfx.distortGain = v / 10.f;
+}
+//------------------------------------------------------------------------------
+uint8_t PunchFx_getEditFocus(void)
+{
+	return pfx.editFocus;
+}
+//------------------------------------------------------------------------------
+uint8_t PunchFx_getCrushHold(void)
+{
+	return pfx.crushHold;
+}
+//------------------------------------------------------------------------------
+void PunchFx_adjustCrushHold(int8_t inc)
+{
+	int16_t v = (int16_t)pfx.crushHold + inc;
+	if(v < PUNCH_CRUSH_HOLD_MIN) v = PUNCH_CRUSH_HOLD_MIN;
+	if(v > PUNCH_CRUSH_HOLD_MAX) v = PUNCH_CRUSH_HOLD_MAX;
+	if((uint8_t)v != pfx.crushHold)
+	{
+		pfx.crushHold = (uint8_t)v;
+		pfx.holdCnt = 0;
+	}
+}
+//------------------------------------------------------------------------------
+uint8_t PunchFx_getCrushBits(void)
+{
+	return pfx.crushBits;
+}
+//------------------------------------------------------------------------------
+static int16_t punch_bitsToMask(uint8_t bits)
+{
+	if(bits >= 16) return (int16_t)0xFFFF;
+	return (int16_t)((uint16_t)0xFFFF << (16 - bits));
+}
+//------------------------------------------------------------------------------
+void PunchFx_adjustCrushBits(int8_t inc)
+{
+	int16_t v = (int16_t)pfx.crushBits + inc;
+	if(v < PUNCH_CRUSH_BITS_MIN) v = PUNCH_CRUSH_BITS_MIN;
+	if(v > PUNCH_CRUSH_BITS_MAX) v = PUNCH_CRUSH_BITS_MAX;
+	pfx.crushBits = (uint8_t)v;
+	pfx.crushMask = punch_bitsToMask(pfx.crushBits);
 }
 //------------------------------------------------------------------------------
 static uint32_t punch_stepFrames()
@@ -579,7 +646,7 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 		if(toneType == PUNCH_CRUSH)
 		{
 			capture = pfx.holdCnt == 0;
-			if(++pfx.holdCnt >= PUNCH_CRUSH_HOLD) pfx.holdCnt = 0;
+			if(++pfx.holdCnt >= pfx.crushHold) pfx.holdCnt = 0;
 		}
 
 		//--- render all 4 channels ---
@@ -617,7 +684,7 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 			switch(toneType)
 			{
 			case PUNCH_CRUSH:
-				if(capture) pfx.held[ch] = (int16_t)__SSAT((int32_t)x, 16) & PUNCH_CRUSH_MASK;
+				if(capture) pfx.held[ch] = (int16_t)__SSAT((int32_t)x, 16) & pfx.crushMask;
 				wet2 = pfx.held[ch];
 				break;
 

@@ -56,6 +56,7 @@ static void setNoteName(uint8_t num, char *buf);
 static void menu_moveToMenuItem(int8_t inc);
 static void menu_encoderChangeParameter(int8_t inc);
 static void menu_repaintPunchDistort(void);
+static void menu_repaintPunchCrush(void);
 
 #define ARROW_SIGN '>'
 #define ARROW_UP 0b11000101
@@ -1830,15 +1831,35 @@ static void menu_repaintPunchDistort(void)
 	}
 }
 //-----------------------------------------------------------------
+// hold and bit depth while the crush punch button owns the encoders
+static void menu_repaintPunchCrush(void)
+{
+	memset(&editDisplayBuffer[0][0], ' ', 16);
+	memset(&editDisplayBuffer[1][0], ' ', 16);
+	editDisplayBuffer[0][16] = 0;
+	editDisplayBuffer[1][16] = 0;
+
+	memcpy(&editDisplayBuffer[0][0], "hld", 3);
+	memcpy(&editDisplayBuffer[0][4], "msk", 3);
+	upr_three(&editDisplayBuffer[0][0]);
+	upr_three(&editDisplayBuffer[0][4]);
+	numtostrpu(&editDisplayBuffer[1][0], PunchFx_getCrushHold(), ' ');
+	numtostrpu(&editDisplayBuffer[1][4], PunchFx_getCrushBits(), ' ');
+}
+//-----------------------------------------------------------------
 // repaint the screen
 void menu_repaint()
 {
 	if(screensaver_Active) return;
 
 	visibleCursor = 0;
-	if(PunchFx_distortIsHeld())
+	if(PunchFx_getEditFocus() == PUNCH_EDIT_DISTORT)
 	{
 		menu_repaintPunchDistort();
+	}
+	else if(PunchFx_getEditFocus() == PUNCH_EDIT_CRUSH)
+	{
+		menu_repaintPunchCrush();
 	}
 	else if(menu_activePage == LOAD_PAGE || menu_activePage==SAVE_PAGE)
 	{
@@ -3944,12 +3965,22 @@ uint8_t getMenuIndx(void)
 uint8_t menu_parseKnobValue(uint8_t potNr, int16_t diff)
 {
 	//the four parameter encoders edit the held punch effect instead of the page
-	if(PunchFx_distortIsHeld())
+	const uint8_t punchEdit = PunchFx_getEditFocus();
+	if(punchEdit == PUNCH_EDIT_DISTORT)
 	{
 		screensaver_touch();
 		if(potNr == 0)
 			PunchFx_adjustDistortDrive((int8_t)(diff > 0 ? 1 : -1));
 		return potNr == 0;
+	}
+	if(punchEdit == PUNCH_EDIT_CRUSH)
+	{
+		screensaver_touch();
+		if(potNr == 0)
+			PunchFx_adjustCrushHold((int8_t)(diff > 0 ? 1 : -1));
+		else if(potNr == 1)
+			PunchFx_adjustCrushBits((int8_t)(diff > 0 ? 1 : -1));
+		return potNr < 2;
 	}
 
 	screensaver_touch();

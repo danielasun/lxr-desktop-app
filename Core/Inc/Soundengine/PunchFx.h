@@ -9,6 +9,7 @@
  * one time effect (repeat, reverse, tape stop) followed by one tone effect (crush, filters).
  * Step button 8 adds a master soft clip on top of both, recorded in the punch track.
  * While that button is held, parameter encoder 1 sets the clip drive. The value is kept.
+ * While the crush button is held, encoders 1 and 2 set the sample-hold and the bit depth.
  *
  * Copyright (C) 2012-2026 Erica Synths
  * SPDX-License-Identifier: GPL-3.0-only
@@ -85,6 +86,24 @@ uint8_t PunchFx_getDistortDrive(void);
 
 /** move the remembered drive by inc encoder detents */
 void PunchFx_adjustDistortDrive(int8_t inc);
+
+enum PunchEditFocusEnum
+{
+	PUNCH_EDIT_NONE = 0,
+	PUNCH_EDIT_DISTORT,
+	PUNCH_EDIT_CRUSH
+};
+
+/** which held punch button currently owns the parameter encoders */
+uint8_t PunchFx_getEditFocus(void);
+
+/** sample-hold length in frames. 1 captures every frame, 16 holds for 16 frames */
+uint8_t PunchFx_getCrushHold(void);
+void PunchFx_adjustCrushHold(int8_t inc);
+
+/** bits kept from the 16-bit sample. 16 is full resolution, 1 keeps only the sign */
+uint8_t PunchFx_getCrushBits(void);
+void PunchFx_adjustCrushBits(int8_t inc);
 
 /** process both interleaved stereo DAC buffers in place, after the mixer and FX bus */
 void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames);
