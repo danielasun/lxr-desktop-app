@@ -186,4 +186,8 @@ void buttonHandler_showMuteLEDs();
 void buttonHandler_setRunStopState(uint8_t running);
 //--------------------------------------------------------
 uint8_t buttonHandler_octaveIsHeld(void);
+/** 1 while perf button 9, the repeat, is held */
+uint8_t buttonHandler_stutterIsHeld(void);
+/** repeat type (PunchFxTypeEnum) played by perf button 9 */
+uint8_t buttonHandler_getStutterType(void);
 #endif /* BUTTONHANDLER_H_ */

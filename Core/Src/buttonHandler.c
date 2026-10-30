@@ -58,7 +58,12 @@ static uint8_t buttonHandler_punchHeld = 0;		//bit per held punch button (seq bu
 static uint8_t buttonHandler_punchLast[PUNCH_NUM_GROUPS];	//last pressed punch button per fx group
 static uint8_t buttonHandler_distortHeld = 0;	//perf button 8 (kit) soft clip
 static uint8_t buttonHandler_octaveHeld = 0;	//perf button 11, screen while held
-static uint8_t buttonHandler_morphLoop32 = 0;	//button 9 was pressed with shift, so it plays 1/32
+static uint8_t buttonHandler_stutterType = PUNCH_LOOP16;	//repeat played by button 9, set by shift or buttons 1-7
+static uint8_t buttonHandler_stutterRateHeld = 0;	//bit per button 1-7 pressed while button 9 was held
+//repeat rate of buttons 1-7 while button 9 is held
+static const uint8_t buttonHandler_stutterRates[PUNCH_NUM_RATES] = {
+	PUNCH_LOOP8, PUNCH_LOOP12, PUNCH_LOOP16, PUNCH_LOOP16T, PUNCH_LOOP32, PUNCH_LOOP48, PUNCH_LOOP64
+};
 volatile static int8_t buttonHandler_armedAutomationStep = NO_STEP_SELECTED;
 
 #define ARM_AUTOMATION		0x40
@@ -833,12 +838,11 @@ static void buttonHandler_punchPressed(uint8_t seqButtonPressed)
 	if(seqButtonPressed == SEQ_PROJECT) return;
 	const uint8_t idx = seqButtonPressed - 8;
 	uint8_t type = idx + 1;
-	//button 9 is 1/16. Shift makes the same hold a 1/32.
+	//button 9 is 1/16. Shift makes the same hold a 1/32, buttons 1-7 change it while held.
 	if(seqButtonPressed == SEQ_MORPH)
 	{
-		buttonHandler_morphLoop32 = buttonHandler_getShift() ? 1 : 0;
-		if(buttonHandler_morphLoop32)
-			type = PUNCH_LOOP32;
+		buttonHandler_stutterType = buttonHandler_getShift() ? PUNCH_LOOP32 : PUNCH_LOOP16;
+		type = buttonHandler_stutterType;
 	}
 	const uint8_t group = PunchFx_getGroup(type);
 	buttonHandler_punchHeld |= (uint8_t)(1<<idx);
@@ -870,16 +874,57 @@ static uint8_t buttonHandler_punchReleased(uint8_t seqButtonPressed)
 			if((buttonHandler_punchHeld & (1<<i)) && PunchFx_getGroup(i + 1) == group)
 			{
 				next = i + 1;
-				if(i == 0 && buttonHandler_morphLoop32)
-					next = PUNCH_LOOP32;
+				if(i == 0)
+					next = buttonHandler_stutterType;
 				buttonHandler_punchLast[group] = i;
 			}
 		}
 		frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, PUNCH_MSG(group, next));
 	}
-	if(seqButtonPressed == SEQ_MORPH)
-		buttonHandler_morphLoop32 = 0;
 	menu_repaint();
+	return 1;
+}
+//--------------------------------------------------------
+uint8_t buttonHandler_stutterIsHeld(void)
+{
+	return (buttonHandler_punchHeld & 1) ? 1 : 0;
+}
+//--------------------------------------------------------
+uint8_t buttonHandler_getStutterType(void)
+{
+	return buttonHandler_stutterType;
+}
+//--------------------------------------------------------
+// perf mode: while button 9 is held, buttons 1-7 set its repeat rate instead of a roll.
+// the rate stays until button 9 is released
+// returns 1 if the button was used for the rate
+static uint8_t buttonHandler_stutterRatePressed(uint8_t seqButtonPressed)
+{
+	if(buttonHandler_getMode() != SELECT_MODE_PERF || !buttonHandler_stutterIsHeld()) return 0;
+	if(seqButtonPressed >= PUNCH_NUM_RATES) return 0;
+
+	const uint8_t type = buttonHandler_stutterRates[seqButtonPressed];
+	const uint8_t changed = type != buttonHandler_stutterType;
+	buttonHandler_stutterRateHeld |= (uint8_t)(1<<seqButtonPressed);
+	buttonHandler_stutterType = type;
+	//only switch if button 9 is the time fx that plays, otherwise it is used when that is released
+	if(changed && buttonHandler_punchLast[PUNCH_GROUP_TIME] == 0)
+		frontPanel_sendData(SEQ_CC, SEQ_PUNCH_FX, PUNCH_MSG(PUNCH_GROUP_TIME, buttonHandler_stutterType));
+	led_setValue(1, led_idx2StepLed(seqButtonPressed));
+	screensaver_touch();
+	menu_repaint();
+	return 1;
+}
+//--------------------------------------------------------
+// handled independent of the mode and shift, so the release does not end a roll that never started
+// returns 1 if the button was pressed as a repeat rate
+static uint8_t buttonHandler_stutterRateReleased(uint8_t seqButtonPressed)
+{
+	if(seqButtonPressed >= PUNCH_NUM_RATES) return 0;
+	if(!(buttonHandler_stutterRateHeld & (1<<seqButtonPressed))) return 0;
+
+	buttonHandler_stutterRateHeld &= (uint8_t)~(1<<seqButtonPressed);
+	led_setValue(0, led_idx2StepLed(seqButtonPressed));
 	return 1;
 }
 //--------------------------------------------------------
@@ -936,6 +981,8 @@ static void buttonHandler_seqButtonPressed(uint8_t seqButtonPressed)
 
 
 	uint8_t ledNr = led_idx2StepLed(seqButtonPressed);
+
+	if(buttonHandler_stutterRatePressed(seqButtonPressed)) return;
 
 	if (buttonHandler_getShift()) {
 
@@ -1416,6 +1463,7 @@ static void buttonHandler_seqButtonReleased(uint8_t seqButtonPressed)
 
 	uint8_t ledNr = led_idx2StepLed(seqButtonPressed);
 
+	if(buttonHandler_stutterRateReleased(seqButtonPressed)) return;
 	if(buttonHandler_punchReleased(seqButtonPressed)) return;
 	if(buttonHandler_octaveReleased(seqButtonPressed)) return;
 	if(buttonHandler_distortReleased(seqButtonPressed)) return;

@@ -5,6 +5,7 @@
  * Played live from the step buttons in perf mode and recordable
  * into a 16 step punch track per pattern.
  * Button 9 is a 1/16 repeat. Shift and button 9 is a 1/32 repeat.
+ * While button 9 is held, buttons 1-7 set the repeat to 1/8, 1/12, 1/16, 1/24, 1/32, 1/48 or 1/64.
  * Button 11 is not an effect: it transposes every track by an octave.
  *
  * The effects are split in 2 groups that can be stacked:
@@ -31,22 +32,31 @@
 //number of steps in the punch track of a pattern
 #define PUNCH_STEPS 16
 
-//recorded type ids. Button 9 plays LOOP16, shift+button 9 plays LOOP32.
+//recorded type ids. Button 9 plays LOOP16, shift+button 9 plays LOOP32,
+//buttons 1-7 change the rate of a held button 9.
 //Button 11 is the octave transpose and is not one of these types.
+//must stay below 16, SEQ_PUNCH_FX carries the type in 4 bits
 enum PunchFxTypeEnum
 {
 	PUNCH_OFF,
 	PUNCH_LOOP16,		//repeat 1/16
-	PUNCH_LOOP16T,		//repeat 1/16 triplet
+	PUNCH_LOOP16T,		//repeat 1/16 triplet (1/24)
 	PUNCH_LOOP32,		//repeat 1/32
 	PUNCH_CRUSH,		//bit crush + sample rate reduction
 	PUNCH_REVERSE,		//play the last 1/8 backwards
 	PUNCH_TAPESTOP,		//slow down to a halt
 	PUNCH_LPF,			//DJ filter: lowpass below center, bypass at center, highpass above
 	PUNCH_HPF,			//high pass sweep up
+	PUNCH_LOOP8,		//repeat 1/8
+	PUNCH_LOOP12,		//repeat 1/8 triplet (1/12)
+	PUNCH_LOOP48,		//repeat 1/32 triplet (1/48)
+	PUNCH_LOOP64,		//repeat 1/64
 
 	PUNCH_NUM_TYPES
 };
+
+//repeat rates of buttons 1-7 while button 9 is held
+#define PUNCH_NUM_RATES 7
 
 enum PunchFxGroupEnum
 {
@@ -56,11 +66,12 @@ enum PunchFxGroupEnum
 	PUNCH_NUM_GROUPS
 };
 
-//a punch track step holds the time effect in bits 0-2, the distortion flag in bit 3
-//(no time effect uses it; the largest is PUNCH_TAPESTOP) and the tone effect in the upper nibble
-#define PUNCH_STEP_DISTORT	0x08
-#define PUNCH_STEP_TIME(step)	((step) & 0x07)
-#define PUNCH_STEP_TONE(step)	((step) >> 4)
+//a punch track step holds the time effect type in bits 0-3, the tone effect in bits 4-5
+//(0 off, 1 crush, 2 DJ filter, 3 highpass sweep) and the distortion flag in bit 7
+#define PUNCH_STEP_TIME_MASK	0x0f
+#define PUNCH_STEP_TONE_SHIFT	4
+#define PUNCH_STEP_TONE_MASK	0x30
+#define PUNCH_STEP_DISTORT		0x80
 
 //SEQ_PUNCH_FX data2: bit 4 = group, bits 0-3 = type (PUNCH_OFF releases the group)
 #define PUNCH_MSG(group, type)	(((group) << 4) | (type))
@@ -68,6 +79,12 @@ enum PunchFxGroupEnum
 static inline uint8_t PunchFx_getGroup(uint8_t type)
 {
 	return (type == PUNCH_CRUSH || type == PUNCH_LPF || type == PUNCH_HPF) ? PUNCH_GROUP_TONE : PUNCH_GROUP_TIME;
+}
+
+static inline uint8_t PunchFx_isRepeat(uint8_t type)
+{
+	return type == PUNCH_LOOP8 || type == PUNCH_LOOP12 || type == PUNCH_LOOP16 || type == PUNCH_LOOP16T
+			|| type == PUNCH_LOOP32 || type == PUNCH_LOOP48 || type == PUNCH_LOOP64;
 }
 
 void PunchFx_init();

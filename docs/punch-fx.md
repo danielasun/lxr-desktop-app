@@ -11,7 +11,7 @@ Within one group, the last button you pressed is the one that plays. Releasing i
 | Button | Name | Effect |
 |---|---|---|
 | 8 | Kit | Soft clip |
-| 9 | Morph | Repeat, 1/16. Shift: repeat, 1/32 |
+| 9 | Morph | Repeat, 1/16. Shift: repeat, 1/32. Hold and press 1-7 to change the rate |
 | 10 | Song | Repeat, 1/16 triplet |
 | 11 | Project | Octave up. Shift: octave down |
 | 12 | Config | Crush |
@@ -24,7 +24,15 @@ Buttons 9, 10, 13 and 14 are the time group. Buttons 12, 15 and 16 are the tone 
 
 ## Effects
 
-**Repeat.** Loops a slice of what was just played. Button 9 is one step long (1/16). Shift and button 9 is half a step (1/32). Button 10 is a 1/16 triplet, two thirds of a step. The loop lines up with the step grid. The first pass is the live signal, so the punch-in does not jump, and the seam of each repeat is faded. At a slow tempo a loop that would be longer than the history (about 186 ms) is halved until it fits.
+**Repeat.** Loops a slice of what was just played. Button 9 is one step long (1/16). Shift and button 9 is half a step (1/32). Button 10 is a 1/16 triplet, two thirds of a step. The loop lines up with the step grid. The first pass is the live signal, so the punch-in does not jump, and the seam of each repeat is faded. At a slow tempo a loop that would be longer than the history (about 186 ms) is halved until it fits. That means 1/8 only plays at its full length above about 165 BPM, and 1/12 above about 110 BPM.
+
+**Repeat rate.** While button 9 is held, buttons 1-7 change its rate instead of starting a roll:
+
+| Button | 1 | 2 | 3 | 4 | 5 | 6 | 7 |
+|---|---|---|---|---|---|---|---|
+| Rate | 1/8 | 1/12 | 1/16 | 1/24 | 1/32 | 1/48 | 1/64 |
+
+The new rate stays until you release button 9; you do not need to keep holding the rate button. The screen shows **RPT** and the current rate while button 9 is held. Going to a shorter rate keeps repeating the audio that was already captured, like a roll. Going to a rate longer than the captured slice captures fresh audio. Each rate is recorded onto the punch track like the other effects.
 
 **Octave.** Each press of button 11 raises the playing note of every track by one octave. Shift and button 11 lowers every track by one octave. Notes that are already sounding move with it, and the next notes do too. The change stays after you release the button, up to four octaves either way. It is not stored in the pattern, and a restart puts it back to zero. While the button is held the screen shows **OCT** and the current octave count.
 

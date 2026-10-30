@@ -64,6 +64,9 @@
 
 #define PUNCH_NUM_CH		4				//2 DACs * stereo
 
+//tone effect of each step code in bits 4-5 of a punch track step
+static const uint8_t punch_toneTypes[4] = {PUNCH_OFF, PUNCH_CRUSH, PUNCH_LPF, PUNCH_HPF};
+
 typedef struct
 {
 	float ic1;
@@ -106,6 +109,7 @@ static struct
 	//loop + reverse
 	uint32_t loopStart;
 	uint32_t loopLen;
+	uint32_t loopCaptured;			//frames of a frozen repeat in the history, kept when the rate changes
 	uint32_t phase;
 	uint8_t firstPass;
 
@@ -335,15 +339,63 @@ static uint32_t punch_clampLen(uint32_t len)
 // the recorded effect of a group on a punch track step
 static uint8_t punch_decodeStep(uint8_t step, uint8_t group)
 {
-	const uint8_t type = group == PUNCH_GROUP_TIME ? PUNCH_STEP_TIME(step) : PUNCH_STEP_TONE(step);
+	if(group == PUNCH_GROUP_TONE)
+		return punch_toneTypes[(step & PUNCH_STEP_TONE_MASK) >> PUNCH_STEP_TONE_SHIFT];
+	const uint8_t type = step & PUNCH_STEP_TIME_MASK;
 	if(type >= PUNCH_NUM_TYPES || PunchFx_getGroup(type) != group) return PUNCH_OFF;
 	return type;
+}
+//------------------------------------------------------------------------------
+// the step bits of a tone effect
+static uint8_t punch_encodeTone(uint8_t type)
+{
+	for(uint8_t i=1;i<4;i++)
+	{
+		if(punch_toneTypes[i] == type) return (uint8_t)(i << PUNCH_STEP_TONE_SHIFT);
+	}
+	return 0;
+}
+//------------------------------------------------------------------------------
+static uint32_t punch_repeatLen(uint8_t type, uint32_t stepFrames)
+{
+	switch(type)
+	{
+	case PUNCH_LOOP8:	return stepFrames*2;
+	case PUNCH_LOOP12:	return stepFrames*4/3;
+	case PUNCH_LOOP16T:	return stepFrames*2/3;
+	case PUNCH_LOOP32:	return stepFrames/2;
+	case PUNCH_LOOP48:	return stepFrames/3;
+	case PUNCH_LOOP64:	return stepFrames/4;
+	default:			return stepFrames;
+	}
 }
 //------------------------------------------------------------------------------
 // livePos is the history position of the first frame of the current block
 static void punch_startTime(uint8_t type, uint32_t livePos)
 {
 	PunchSlot* s = &pfx.slot[PUNCH_GROUP_TIME];
+	const uint32_t stepFrames = punch_stepFrames();
+
+	//a new rate while a repeat plays: keep repeating the captured audio if it is long enough,
+	//like a roll. A longer rate than the capture needs fresh audio and starts over,
+	//and a retrigger of the same rate captures again
+	if(PunchFx_isRepeat(type) && PunchFx_isRepeat(s->type) && type != s->type)
+	{
+		const uint32_t len = punch_clampLen(punch_repeatLen(type, stepFrames));
+		const uint32_t captured = pfx.frozen ? pfx.loopCaptured : livePos - pfx.loopStart;
+		if(len <= captured)
+		{
+			s->type = type;
+			s->fadingOut = 0;
+			s->restart = 0;
+			pfx.loopLen = len;
+			pfx.loopCaptured = captured;
+			pfx.phase = 0;
+			pfx.firstPass = 0;
+			pfx.frozen = 1;
+			return;
+		}
+	}
 
 	if(pfx.frozen)
 	{
@@ -356,18 +408,17 @@ static void punch_startTime(uint8_t type, uint32_t livePos)
 	s->fadingOut = 0;
 	s->restart = 0;
 
-	const uint32_t stepFrames = punch_stepFrames();
-
 	switch(type)
 	{
+	case PUNCH_LOOP8:
+	case PUNCH_LOOP12:
 	case PUNCH_LOOP16:
 	case PUNCH_LOOP16T:
 	case PUNCH_LOOP32:
+	case PUNCH_LOOP48:
+	case PUNCH_LOOP64:
 	{
-		uint32_t len = stepFrames;
-		if(type == PUNCH_LOOP16T) len = stepFrames*2/3;
-		else if(type == PUNCH_LOOP32) len = stepFrames/2;
-		len = punch_clampLen(len);
+		const uint32_t len = punch_clampLen(punch_repeatLen(type, stepFrames));
 
 		//align the loop to the grid if the step start is still in the history
 		uint32_t base = livePos;
@@ -521,7 +572,7 @@ static void punch_handleSteps(uint32_t frames)
 			pfx.distortRecNext = 0;
 			if(changed)
 			{
-				track[pfx.curStep] = (uint8_t)(timeFx | (toneFx << 4) | dist);
+				track[pfx.curStep] = (uint8_t)(timeFx | punch_encodeTone(toneFx) | dist);
 			}
 		}
 
@@ -534,9 +585,9 @@ static void punch_handleSteps(uint32_t frames)
 				{
 					uint8_t* step = &track[pfx.curStep];
 					if(g == PUNCH_GROUP_TIME)
-						*step = (uint8_t)((*step & 0xf8) | live[g]);
+						*step = (uint8_t)((*step & ~PUNCH_STEP_TIME_MASK) | live[g]);
 					else
-						*step = (uint8_t)((*step & 0x0f) | (live[g] << 4));
+						*step = (uint8_t)((*step & ~PUNCH_STEP_TONE_MASK) | punch_encodeTone(live[g]));
 				}
 				else
 				{
@@ -712,9 +763,13 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 
 		switch(timeType)
 		{
+		case PUNCH_LOOP8:
+		case PUNCH_LOOP12:
 		case PUNCH_LOOP16:
 		case PUNCH_LOOP16T:
 		case PUNCH_LOOP32:
+		case PUNCH_LOOP48:
+		case PUNCH_LOOP64:
 		case PUNCH_REVERSE:
 			if(timeType == PUNCH_REVERSE)
 				pos = pfx.loopStart + pfx.loopLen - 1 - pfx.phase;
@@ -766,9 +821,13 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 			float wet = dry;
 			switch(timeType)
 			{
+			case PUNCH_LOOP8:
+			case PUNCH_LOOP12:
 			case PUNCH_LOOP16:
 			case PUNCH_LOOP16T:
 			case PUNCH_LOOP32:
+			case PUNCH_LOOP48:
+			case PUNCH_LOOP64:
 			case PUNCH_REVERSE:
 				wet = punch_read(ch, pos) * gain;
 				break;
@@ -859,9 +918,10 @@ void PunchFx_process(int16_t* out1, int16_t* out2, uint32_t frames)
 	}
 
 	//a loop is fully captured once the writer passed its end -> keep it from being overwritten
-	if(!pfx.frozen && timeType >= PUNCH_LOOP16 && timeType <= PUNCH_LOOP32
+	if(!pfx.frozen && PunchFx_isRepeat(timeType)
 			&& (pfx.wr - pfx.loopStart) >= pfx.loopLen)
 	{
 		pfx.frozen = 1;
+		pfx.loopCaptured = pfx.loopLen;
 	}
 }

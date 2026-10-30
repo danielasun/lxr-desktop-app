@@ -1878,6 +1878,30 @@ static void menu_repaintOctave(void)
 	numtostrps(&editDisplayBuffer[1][0], (int8_t)(seq_getPerformanceTranspose() / 12));
 }
 //-----------------------------------------------------------------
+// repeat rate while perf button 9 is held, buttons 1-7 change it
+static void menu_repaintStutter(void)
+{
+	memset(&editDisplayBuffer[0][0], ' ', 16);
+	memset(&editDisplayBuffer[1][0], ' ', 16);
+	editDisplayBuffer[0][16] = 0;
+	editDisplayBuffer[1][16] = 0;
+
+	memcpy(&editDisplayBuffer[0][0], "rpt", 3);
+	upr_three(&editDisplayBuffer[0][0]);
+	const char* rate;
+	switch(buttonHandler_getStutterType())
+	{
+	case PUNCH_LOOP8:	rate = "1/8";	break;
+	case PUNCH_LOOP12:	rate = "1/12";	break;
+	case PUNCH_LOOP16T:	rate = "1/24";	break;
+	case PUNCH_LOOP32:	rate = "1/32";	break;
+	case PUNCH_LOOP48:	rate = "1/48";	break;
+	case PUNCH_LOOP64:	rate = "1/64";	break;
+	default:			rate = "1/16";	break;
+	}
+	memcpy(&editDisplayBuffer[1][0], rate, strlen(rate));
+}
+//-----------------------------------------------------------------
 // repaint the screen
 void menu_repaint()
 {
@@ -1899,6 +1923,10 @@ void menu_repaint()
 	else if(PunchFx_getEditFocus() == PUNCH_EDIT_DJ)
 	{
 		menu_repaintPunchDj();
+	}
+	else if(buttonHandler_stutterIsHeld())
+	{
+		menu_repaintStutter();
 	}
 	else if(menu_activePage == LOAD_PAGE || menu_activePage==SAVE_PAGE)
 	{

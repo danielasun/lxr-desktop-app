@@ -104,7 +104,7 @@ typedef struct PatternSetStruct
 	uint8_t length[NUM_PATTERN][NUM_TRACKS];	//only used in euklid generator?
 	uint8_t shuffle[NUM_PATTERN];
 	uint8_t kitNr[NUM_PATTERN];
-	uint8_t punchFx[NUM_PATTERN][PUNCH_STEPS];	//punch-in fx per step: time fx in bits 0-2, distortion in bit 3, tone fx in the upper nibble
+	uint8_t punchFx[NUM_PATTERN][PUNCH_STEPS];	//punch-in fx per step: time fx in bits 0-3, tone fx in bits 4-5, distortion in bit 7
 }PatternSet;
 
 typedef struct PatternBackupBufferStruct
